@@ -165,4 +165,5 @@ class Arma(object):
         parameter was used and was a sequence, the output `U` simply mirrors the
         input.
         """
-        pass
+        u_out = np.array([]) if U is None else U
+        return np.zeros(len(u_out)), u_out
