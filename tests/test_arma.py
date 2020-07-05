@@ -11,7 +11,7 @@ class TestArmaInit1d(unittest.TestCase):
         self.a = [1, 0.5]
         self.b = [0.5, -0.3, 0.2]
         self.arma = Arma(self.a, self.b)
-    
+
     def test_creates_coefficients(self):
         np.testing.assert_allclose(self.arma.a, self.a)
         np.testing.assert_allclose(self.arma.b, self.b)
@@ -125,8 +125,13 @@ class TestArmaTransform(unittest.TestCase):
     def setUp(self):
         rng = default_rng(4)
         self.n = 123
-        self.arma = Arma([-1.1, -0.6, -0.1], [0.8, 0.2])
+        # initial conditions (y, u)
+        self.ic = (np.array([0.2, -0.3, 0.1]), np.array([-0.1, 0.5]))
+        self.arma = self.create_initial_arma()
         self.u = rng.normal(size=self.n)
+
+    def create_initial_arma(self) -> Arma:
+        return Arma([-1.1, -0.6, -0.1], [0.8, 0.2], initial_conditions=self.ic)
 
     def test_result_length_matches_input_length(self):
         y, _ = self.arma.transform(U=self.u)
@@ -138,6 +143,32 @@ class TestArmaTransform(unittest.TestCase):
 
         np.testing.assert_allclose(self.u, u_out)
 
+    def test_single_sample(self):
+        sample = 0.4
+        y, _ = self.arma.transform(U=[sample])
 
-if __name__ == '__main__':
+        ar_part = np.dot(np.flip(self.ic[0]), self.arma.a)
+        ma_part = sample + np.dot(np.flip(self.ic[1]), self.arma.b)
+
+        self.assertAlmostEqual(y[0], ar_part + ma_part)
+
+    def test_transform_n1_then_n2_samples_same_as_transform_n1_plus_n2(self):
+        arma_copy = self.create_initial_arma()
+
+        # transform in two parts
+        n1 = 2 * self.n // 9
+        u1 = self.u[:n1]
+        u2 = self.u[n1:]
+        y1, _ = self.arma.transform(U=u1)
+        y2, _ = self.arma.transform(U=u2)
+
+        y = np.hstack((y1, y2))
+
+        # transform all at once
+        y_exp, _ = arma_copy.transform(U=self.u)
+
+        np.testing.assert_allclose(y, y_exp)
+
+
+if __name__ == "__main__":
     unittest.main()

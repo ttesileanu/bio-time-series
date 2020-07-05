@@ -77,7 +77,7 @@ class Arma(object):
         b: Sequence,
         bias: Union[float, Sequence] = 0,
         default_source: Optional[Callable] = None,
-        initial_conditions: Optional[Tuple[Sequence]] = None,
+        initial_conditions: Optional[Tuple[Sequence, Sequence]] = None,
     ):
         """ Initialize the process.
 
@@ -130,6 +130,18 @@ class Arma(object):
         self.n_components = na
         self.n_features = self.n_components
 
+        if initial_conditions is not None:
+            self.history_ = (
+                np.copy(initial_conditions[0]),
+                np.copy(initial_conditions[1]),
+            )
+        else:
+            self.history_ = (np.zeros(self.p), np.zeros(self.q))
+
+        # _mode allows us to choose legacy implementations
+        # useful for testing
+        self._mode = "naive"
+
     def transform(
         self,
         n_samples: Optional[int] = None,
@@ -165,5 +177,32 @@ class Arma(object):
         parameter was used and was a sequence, the output `U` simply mirrors the
         input.
         """
-        u_out = np.array([]) if U is None else U
-        return np.zeros(len(u_out)), u_out
+        if U is None:
+            if n_samples == 0:
+                return np.array([]), np.array([])
+            raise NotImplementedError("default_source not yet implemented.")
+
+        # output vectors including pre-history
+        n = len(U)
+        y_out_full = np.zeros(n + self.p)
+        u_out_full = np.zeros(n + self.q)
+
+        y_out_full[: self.p] = self.history_[0]
+        u_out_full[: self.q] = self.history_[1]
+        u_out_full[self.q :] = U
+
+        a_flip = np.flip(self.a)
+        b_flip_big = np.hstack((np.flip(self.b), [1]))
+
+        for i in range(n):
+            ar_part = np.dot(a_flip, y_out_full[i : i + self.p])
+            ma_part = np.dot(b_flip_big, u_out_full[i : i + self.q + 1])
+            y_out_full[i + self.p] = ar_part + ma_part
+
+        # update history
+        self.history_[0][:] = y_out_full[-self.p:]
+        self.history_[1][:] = u_out_full[-self.q:]
+
+        y_out = y_out_full[self.p :]
+        u_out = u_out_full[self.q :]
+        return y_out, u_out
