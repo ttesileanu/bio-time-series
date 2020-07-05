@@ -5,25 +5,6 @@ import numpy as np
 from typing import Sequence, Tuple, Callable, Optional, Union
 
 
-def _get_len(x: Union[float, Sequence]) -> int:
-    """ Get length of single object or sequence.
-
-    This returns 1 if the input does not have a `__len__` attribute, otherwise
-    returns the length.
-
-    Parameters
-    ----------
-    x
-        The object whose length to return.
-
-    Returns the length.
-    """
-    if hasattr(x, "__len__"):
-        return len(x)
-    else:
-        return 1
-
-
 class Arma(object):
     """ Transform input into output samples using autoregressive moving-average
     (ARMA) processes.
@@ -35,35 +16,26 @@ class Arma(object):
                       u[t] + b[0]*u[t-1] + ... + b[q-1]*u[t-q] ,
 
     where `a[i]`, `b[i]` are the coefficients of the process. This class
-    implements both scalar processes, where `y[t]`, `u[t]`, `a[i]`, and `b[i]`
-    are all scalars, and vector (VARMA) processes, where `y[t]` and `u[t]` are
-    vectors and `a[i]` and `b[i]` are matrices.
+    focuses on scalar processes, where `y[t]`, `u[t]`, `a[i]`, and `b[i]` are
+    all scalars.
 
     Attributes
     ==========
-    n_components : int
-        Number of dimensions in the output. This is the size of `y[t]`, and is
-        read-only.
-    n_features : int
-        Number of dimensions in the input. This is the size of `u[t]`, and is
-        read-only. In the parametrization used here, `n_features` is always
-        equal to `n_components`.
-    a : array of float or matrix
-        AR parameters. These are read-only.
-    b : array of float or matrix
-        MA parameters. These are read-only.
+    a : array of float
+        AR parameters. This shouldn't be changed after `__init__`.
+    b : array of float
+        MA parameters. This shouldn't be changed after `__init__`.
     p : int
-        AR order. This is equal to `len(a)`, and is read-only.
+        AR order. This shouldn't be changed.
     q : int
-        MA order. This is equal to `len(b)`, and is read-only.
-    bias : float or vector
-        Constant term. This is read-only.
+        MA order. This shouldn't be changed.
+    bias : float
+        Constant term.
     default_source : callable
         Callable used to generate source data if not explicitly provided. This
-        should take a keyword argument `size` that is a tuple of the form
-        `(n_samples, n_features)` and return a correspondingly sized array.
-        If `default_source` is not provided, the `transform` method needs to be
-        called with an input sequence.
+        should take an integer keyword argument `size` and return an array of
+        that length. If `default_source` is not provided, the `transform` method
+        needs to be called with an input sequence.
     history_ : tuple of arrays
         A tuple, `(history_y, history_u)`, of recent samples of the output and
         input sequences. The number of samples kept depends on the order: `p`
@@ -75,7 +47,7 @@ class Arma(object):
         self,
         a: Sequence,
         b: Sequence,
-        bias: Union[float, Sequence] = 0,
+        bias: float = 0,
         default_source: Optional[Callable] = None,
         initial_conditions: Optional[Tuple[Sequence, Sequence]] = None,
     ):
@@ -91,10 +63,9 @@ class Arma(object):
             Constant term.
         default_source
             Callable used to generate source data if not explicitly provided.
-            This should take a keyword argument `size` that is a tuple of the
-            form `(n_samples, n_features)` and return a correspondingly sized
-            array. If `default_source` is not provided, the `transform` method
-            needs to be called with an input sequence.
+            This should take an integer keyword argument `size` and return an
+            array of that length. If `default_source` is not provided, the
+            `transform` method needs to be called with an input sequence.
         initial_conditions
             A tuple, `(initial_y, initial_u)`, of recent samples of the output
             and input sequences used to seed the simulation. If these are not
@@ -103,32 +74,11 @@ class Arma(object):
         # making sure to make copies
         self.a = np.array(a)
         self.b = np.array(b)
-        if hasattr(bias, "__len__"):
-            # make sure to make copy
-            self.bias = np.array(bias)
-        else:
-            self.bias = bias
+        self.bias = bias
 
         # inferred quantities
         self.p = len(self.a)
         self.q = len(self.b)
-
-        # work out number of input and output dimensions, make sure all matches
-        na = _get_len(self.a[0]) if len(self.a) > 0 else None
-        nb = _get_len(self.b[0]) if len(self.b) > 0 else None
-        nbias = _get_len(self.bias)
-        if na is None and nb is not None:
-            na = nb
-        elif na is not None and nb is None:
-            nb = na
-        elif na is None and nb is None:
-            na = nb = nbias
-        if na != nb:
-            raise ValueError("Mismatching a and b dimensions.")
-        if na != nbias and nbias != 1:
-            raise ValueError("Mismatching coefficient and bias dimensions.")
-        self.n_components = na
-        self.n_features = self.n_components
 
         if initial_conditions is not None:
             self.history_ = (
