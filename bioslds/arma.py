@@ -132,6 +132,11 @@ class Arma(object):
                 return np.array([]), np.array([])
             raise NotImplementedError("default_source not yet implemented.")
 
+        if callable(U):
+            if n_samples is None:
+                raise ValueError("If source is callable n_samples is needed.")
+            U = U(size=n_samples)
+
         # output vectors including pre-history
         n = len(U)
         y_out_full = np.zeros(n + self.p)

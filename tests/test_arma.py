@@ -104,6 +104,30 @@ class TestArmaTransform(unittest.TestCase):
 
         np.testing.assert_allclose(y, y_exp)
 
+    def test_raises_value_error_if_u_callable_and_n_samples_missing(self):
+        with self.assertRaises(ValueError):
+            self.arma.transform(U=lambda size: np.zeros(size))
+
+    def test_works_with_callable_source(self):
+        arma2 = self.create_initial_arma()
+
+        y1, u1 = self.arma.transform(U=self.u)
+        y2, u2 = arma2.transform(self.n, U=lambda size: self.u)
+
+        np.testing.assert_allclose(y1, y2)
+        np.testing.assert_allclose(u1, u2)
+
+    def test_works_with_callable_source_different_n_samples(self):
+        arma2 = self.create_initial_arma()
+
+        n2 = self.n // 3
+
+        y1, u1 = self.arma.transform(U=self.u[:n2])
+        y2, u2 = arma2.transform(n2, U=lambda size: self.u[:size])
+
+        np.testing.assert_allclose(y1, y2)
+        np.testing.assert_allclose(u1, u2)
+
 
 if __name__ == "__main__":
     unittest.main()
