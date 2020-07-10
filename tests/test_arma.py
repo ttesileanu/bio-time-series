@@ -20,22 +20,17 @@ class TestArmaInit(unittest.TestCase):
         self.assertEqual(len(self.a), self.arma.p)
         self.assertEqual(len(self.b), self.arma.q)
 
+    def test_default_bias_is_zero(self):
+        self.assertEqual(self.arma.bias, 0)
 
-class TestArmaInitZeroOrdersBias(unittest.TestCase):
+
+class TestArmaInitZeroOrders(unittest.TestCase):
     def setUp(self):
         self.bias = 3.5
         self.arma = Arma([], [], bias=self.bias)
 
     def test_sets_bias(self):
         self.assertAlmostEqual(self.bias, self.arma.bias)
-
-
-class TestArmaInitDefaultBias(unittest.TestCase):
-    def setUp(self):
-        self.arma = Arma([1, 2], [0.5, -0.3])
-
-    def test_default_bias_is_zero(self):
-        self.assertEqual(self.arma.bias, 0)
 
 
 class TestArmaTransformZeroSamples(unittest.TestCase):
