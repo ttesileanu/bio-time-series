@@ -76,6 +76,8 @@ class Arma(object):
         self.b = np.array(b)
         self.bias = bias
 
+        self.default_source = default_source
+
         # inferred quantities
         self.p = len(self.a)
         self.q = len(self.b)
@@ -128,9 +130,14 @@ class Arma(object):
         input.
         """
         if U is None:
+            if n_samples is None:
+                raise ValueError("Need either U or n_samples.")
             if n_samples == 0:
                 return np.array([]), np.array([])
-            raise NotImplementedError("default_source not yet implemented.")
+            if self.default_source is None:
+                raise ValueError("Need default_source if there's no U.")
+
+            U = self.default_source
 
         if callable(U):
             if n_samples is None:
