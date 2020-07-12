@@ -162,9 +162,21 @@ class Arma(object):
             y_out_full[i + self.p] = ar_part + ma_part
 
         # update history
-        self.history_[0][:] = y_out_full[-self.p:]
-        self.history_[1][:] = u_out_full[-self.q:]
+        self.history_[0][:] = y_out_full[-self.p :]
+        self.history_[1][:] = u_out_full[-self.q :]
 
         y_out = y_out_full[self.p :]
         u_out = u_out_full[self.q :]
         return y_out, u_out
+
+    def __str__(self):
+        s = f"Arma(a={str(self.a)}, b={str(self.b)}, bias={str(self.bias)})"
+        return s
+
+    def __repr__(self):
+        r = (
+            f"Arma(a={repr(self.a)}, b={repr(self.b)}, "
+            + f"bias={repr(self.bias)}, "
+            + f"default_source={repr(self.default_source)})"
+        )
+        return r

@@ -177,5 +177,38 @@ class TestTransformDefaultSource(unittest.TestCase):
         np.testing.assert_allclose(u1, u2)
 
 
+class TestArmaStrAndRepr(unittest.TestCase):
+    def setUp(self):
+        a = np.asarray([1, 0.5])
+        b = np.asarray([0.5, -0.3, 0.2])
+        bias = 3.5
+        self.arma = Arma(a, b, bias=bias)
+
+        self.a_str = str(a)
+        self.a_repr = repr(a)
+
+        self.b_str = str(b)
+        self.b_repr = repr(b)
+
+        self.bias_str = str(bias)
+        self.bias_repr = repr(bias)
+
+    def test_str(self):
+        s = str(self.arma)
+        s_exp = "Arma(a={}, b={}, bias={})".format(
+            self.a_str, self.b_str, self.bias_str
+        )
+
+        self.assertEqual(s, s_exp)
+
+    def test_repr(self):
+        r = repr(self.arma)
+        r_exp = "Arma(a={}, b={}, bias={}, default_source=None)".format(
+            self.a_repr, self.b_repr, self.bias_repr
+        )
+
+        self.assertEqual(r, r_exp)
+
+
 if __name__ == "__main__":
     unittest.main()
