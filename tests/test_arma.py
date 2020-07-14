@@ -210,5 +210,33 @@ class TestArmaStrAndRepr(unittest.TestCase):
         self.assertEqual(r, r_exp)
 
 
+class TestArmaIsStable(unittest.TestCase):
+    def test_pure_ma_is_stable(self):
+        rng = default_rng(1)
+        arma = Arma([], rng.normal(size=4))
+
+        self.assertTrue(arma.is_stable())
+
+    def test_stable_pure_ar(self):
+        arma = Arma([-1.1, -0.6, -0.1], [])
+        self.assertTrue(arma.is_stable())
+
+    def test_unstable_pure_ar(self):
+        arma = Arma([1.1], [])
+        self.assertFalse(arma.is_stable())
+
+    def test_critical_ar_counts_as_not_stable(self):
+        arma = Arma([1.0], [])
+        self.assertFalse(arma.is_stable())
+
+    def test_unstable_arma(self):
+        arma = Arma([0.6, 0.55], [0.5, -0.5])
+        self.assertFalse(arma.is_stable())
+
+    def test_stable_arma(self):
+        arma = Arma([-1.1, -0.6, -0.1], [0.5, 0.3])
+        self.assertTrue(arma.is_stable())
+
+
 if __name__ == "__main__":
     unittest.main()

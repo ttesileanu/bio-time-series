@@ -169,14 +169,28 @@ class Arma(object):
         u_out = u_out_full[self.q :]
         return y_out, u_out
 
-    def __str__(self):
+    def __str__(self) -> str:
         s = f"Arma(a={str(self.a)}, b={str(self.b)}, bias={str(self.bias)})"
         return s
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         r = (
             f"Arma(a={repr(self.a)}, b={repr(self.b)}, "
             + f"bias={repr(self.bias)}, "
             + f"default_source={repr(self.default_source)})"
         )
         return r
+
+    def is_stable(self) -> bool:
+        """ Check whether the system is stable.
+
+        An ARMA system is stable if all the roots of the polynomial
+            z**p - a[0] * z**(p-1) - ... - a[p-1]
+        lie within the unit circle.
+
+        Returns true if the system is stable.
+        """
+        a_coeffs = np.ones(self.p + 1)
+        a_coeffs[1:] = -self.a
+        roots = np.roots(a_coeffs)
+        return all(np.abs(roots) < 1)
