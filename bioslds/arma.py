@@ -194,3 +194,17 @@ class Arma(object):
         a_coeffs[1:] = -self.a
         roots = np.roots(a_coeffs)
         return all(np.abs(roots) < 1)
+
+    def is_invertible(self) -> bool:
+        """ Check whether the system is invertible.
+
+        An ARMA system is invertible if all the roots of the polynomial
+            z**q + b[0] * z**(q-1) + ... + b[q-1]
+        lie within the unit circle.
+
+        Returns true if the system is invertible.
+        """
+        b_coeffs = np.ones(self.q + 1)
+        b_coeffs[1:] = self.b
+        roots = np.roots(b_coeffs)
+        return all(np.abs(roots) < 1)

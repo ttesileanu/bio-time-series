@@ -238,5 +238,33 @@ class TestArmaIsStable(unittest.TestCase):
         self.assertTrue(arma.is_stable())
 
 
+class TestArmaIsInvertible(unittest.TestCase):
+    def test_pure_ar_is_invertible(self):
+        rng = default_rng(1)
+        arma = Arma(rng.normal(size=4), [])
+
+        self.assertTrue(arma.is_invertible())
+
+    def test_invertible_pure_ma(self):
+        arma = Arma([], [1.1, 0.6, 0.1])
+        self.assertTrue(arma.is_invertible())
+
+    def test_noninvertible_pure_ma(self):
+        arma = Arma([], [-1.1])
+        self.assertFalse(arma.is_invertible())
+
+    def test_critical_ma_counts_as_not_invertible(self):
+        arma = Arma([], [1.0])
+        self.assertFalse(arma.is_invertible())
+
+    def test_noninvertible_arma(self):
+        arma = Arma([1.1], [-0.6, -0.55])
+        self.assertFalse(arma.is_invertible())
+
+    def test_invertible_arma(self):
+        arma = Arma([0.5, 0.3], [1.1, 0.6, 0.1])
+        self.assertTrue(arma.is_invertible())
+
+
 if __name__ == "__main__":
     unittest.main()
