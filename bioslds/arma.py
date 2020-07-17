@@ -148,6 +148,8 @@ class Arma(object):
 
         # output vectors including pre-history
         n = len(U)
+        if n == 0:
+            return np.array([]), np.array([])
         y_out_full = np.zeros(n + self.p)
         u_out_full = np.zeros(n + self.q)
 
@@ -164,8 +166,10 @@ class Arma(object):
             y_out_full[i + self.p] = ar_part + ma_part
 
         # update history
-        self.history_[0][:] = y_out_full[-self.p :]
-        self.history_[1][:] = u_out_full[-self.q :]
+        if self.p > 0:
+            self.history_[0][:] = y_out_full[-self.p :]
+        if self.q > 0:
+            self.history_[1][:] = u_out_full[-self.q :]
 
         y_out = y_out_full[self.p :]
         u_out = u_out_full[self.q :]

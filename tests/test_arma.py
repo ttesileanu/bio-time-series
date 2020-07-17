@@ -177,6 +177,38 @@ class TestTransformDefaultSource(unittest.TestCase):
         np.testing.assert_allclose(u1, u2)
 
 
+class TestArmaTransformPureAr(unittest.TestCase):
+    def test_ar1_zero_input(self):
+        alpha = 0.78
+        y0 = 1.0
+        ar = Arma([alpha], [], initial_conditions=([y0], []))
+
+        n = 10
+        y, _ = ar.transform(n, U=lambda size: np.zeros(size))
+
+        y_exp = y0 * alpha ** np.arange(1, n + 1)
+        np.testing.assert_allclose(y, y_exp)
+
+
+class TestArmaTransformPureMa(unittest.TestCase):
+    def test_ma_is_convolution(self):
+        rng = default_rng(1)
+        q = 3
+        b = rng.normal(size=q)
+        ma = Arma([], b)
+
+        n = 52
+        u = rng.normal(size=n)
+
+        y, _ = ma.transform(U=u)
+
+        u_padded = np.hstack((np.zeros(q), u))
+        b_ext = np.hstack(([1], b))
+        y_exp = np.convolve(u_padded, b_ext, mode="valid")
+
+        np.testing.assert_allclose(y, y_exp)
+
+
 class TestArmaStrAndRepr(unittest.TestCase):
     def setUp(self):
         a = np.asarray([1, 0.5])
