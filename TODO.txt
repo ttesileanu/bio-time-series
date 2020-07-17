@@ -1,0 +1,5 @@
+* implement convenient sources for Arma
+* Arma integration tests
+  * use with a random source
+  * benchmark speed of various `_mode`s
+  * show distribution of generated poles / zeros
