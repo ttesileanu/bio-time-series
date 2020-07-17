@@ -32,7 +32,7 @@ class TestSourcesStreamBasic(unittest.TestCase):
     def test_reading_samples_from_empty_store_raises_index_error(self):
         src = sources.Stream([])
         with self.assertRaises(IndexError):
-            y = src(size=1)
+            src(size=1)
 
 
 class TestSourcesStream(unittest.TestCase):
@@ -146,5 +146,6 @@ class TestSourcesGaussianNoise(unittest.TestCase):
 
         np.testing.assert_allclose(y1, y2)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()
