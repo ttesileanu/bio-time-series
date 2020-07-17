@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from typing import Sequence
+from typing import Sequence, Union
 
 
 class Constant(object):
@@ -13,6 +13,7 @@ class Constant(object):
     value
         Value returned by the source.
     """
+
     def __init__(self, value: float):
         self.value = value
 
@@ -37,6 +38,7 @@ class Stream(object):
     ptr_
         Current location in array.
     """
+
     def __init__(self, data: Sequence):
         self.data_store = data
         self.ptr_ = 0
@@ -57,3 +59,52 @@ class Stream(object):
         data = self.data_store[self.ptr_ : self.ptr_ + size]
         self.ptr_ += size
         return data
+
+
+class GaussianNoise(object):
+    """ A source that generates random Gaussian noise.
+
+    Attributes
+    ----------
+    rng
+        Random number generator.
+    loc
+        Location (mean) of normal distribution.
+    scale
+        Scale (standard deviation) of normal distribution.
+    """
+
+    def __init__(
+        self,
+        rng: Union[int, np.random.Generator, np.random.RandomState],
+        loc: float = 0,
+        scale: float = 1,
+    ):
+        """ Initialize the Gaussian noise source.
+
+        Parameters
+        ----------
+        rng
+            Random number generator or seed. If seed, a random number generator
+            is created using `np.random.default_rng`.
+        loc
+            Location (mean) of distribution.
+        scale
+            Scale (standard devation) of distribution.
+        """
+        if isinstance(rng, int):
+            rng = np.random.default_rng(rng)
+
+        self.rng = rng
+        self.loc = loc
+        self.scale = scale
+
+    def __call__(self, size: int) -> np.ndarray:
+        """ Return Gaussian random values.
+
+        Parameter
+        ---------
+        n
+            Number of values to return.
+        """
+        return self.rng.normal(self.loc, self.scale, size=size)
