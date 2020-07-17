@@ -163,7 +163,7 @@ class Arma(object):
         for i in range(n):
             ar_part = np.dot(a_flip, y_out_full[i : i + self.p])
             ma_part = np.dot(b_flip_big, u_out_full[i : i + self.q + 1])
-            y_out_full[i + self.p] = ar_part + ma_part
+            y_out_full[i + self.p] = ar_part + ma_part + self.bias
 
         # update history
         if self.p > 0:

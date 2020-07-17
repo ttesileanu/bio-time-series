@@ -340,5 +340,30 @@ class TestArmaInverse(unittest.TestCase):
         np.testing.assert_allclose(self.u, u_again)
 
 
+class TestArmaBias(unittest.TestCase):
+    def test_trivial_arma_with_bias_no_noise(self):
+        bias = 0.75
+        arma = Arma([], [], bias=bias)
+
+        y, _ = arma.transform(U=np.zeros(15))
+
+        np.testing.assert_allclose(y, bias)
+
+    def test_asymptotic_value_constant_noise(self):
+        bias = 0.32
+        arma = Arma([-1.1, -0.6, -0.1], [0.5, 0.3], bias=bias)
+
+        # the asymptotic value y0 should be given by
+        # y0 * (1 - sum(a)) = bias + u0 * (1 + sum(b))
+        # so: y0 = (bias + u0 * (1 + sum(b))) / (1 - sum(a))
+        u0 = -0.5
+        # give it enough time to converge
+        n = 1000
+        y, _ = arma.transform(U=u0 * np.ones(n))
+
+        y0 = (bias + u0 * (1 + np.sum(arma.b))) / (1 - np.sum(arma.a))
+        self.assertAlmostEqual(y[-1], y0)
+
+
 if __name__ == "__main__":
     unittest.main()
