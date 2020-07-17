@@ -230,12 +230,7 @@ class Arma(object):
         inv_b = -self.a
         inv_bias = -self.bias
 
-        return Arma(
-            inv_a,
-            inv_b,
-            bias=inv_bias,
-            **kwargs,
-        )
+        return Arma(inv_a, inv_b, bias=inv_bias, **kwargs,)
 
     def copy(self) -> Arma:
         """ Make a deep copy of the current process.
@@ -249,3 +244,121 @@ class Arma(object):
         Returns a copy of the current process.
         """
         return copy.deepcopy(self)
+
+
+def make_random_arma(
+    p: int,
+    q: int,
+    rng: Union[np.random.Generator, np.random.RandomState],
+    max_pole_radius: float = 1,
+    max_zero_radius: float = 1,
+    bias_range: Optional[tuple] = None,
+    **kwargs,
+) -> Arma:
+    """ Generate a random ARMA process.
+
+    This works by randomly drawing values for the process' poles and zeros, then
+    computing the corresponding ARMA coefficients. The poles and zeros are drawn
+    uniformly within a disc of a given radius in the complex plane.
+
+    If requested, a random value can also be chosen for the bias (see
+    `bias_range` below); otherwise a zero-mean process is generated.
+
+    Parameters
+    ----------
+    p
+        AR order.
+    q
+        MA order.
+    rng
+        Random number generator to use for generating the ARMA coefficients.
+    max_pole_radius
+        Ensure that all the system's poles lie within the given radius. When
+        this is set to 1 (the default), the process is guaranteed stable.
+    max_zero_radius
+        Ensure that all the system's zeros lie within the given radius. When
+        this is set to 1 (the default), the process is guaranteed invertible.
+    bias_range
+        A tuple `(min_bias, max_bias)` giving the range in which to sample
+        (uniformly) the bias. If not provided, the bias is fixed at 0.
+    All other keyword arguments are passed directly to `Arma.__init__`.
+
+    Returns the randomly generated ARMA process.
+    """
+    a_full = _generate_random_poly(p, max_pole_radius, rng)
+    b_full = _generate_random_poly(q, max_zero_radius, rng)
+
+    bias_args = {}
+    if bias_range is not None:
+        bias_args["bias"] = rng.uniform(*bias_range)
+
+    # a_full[0] and b_full[0] are just 1
+    return Arma(-a_full[1:], b_full[1:], **bias_args, **kwargs)
+
+
+def _generate_random_poly(
+    n: int,
+    radius: float,
+    rng: Union[np.random.Generator, np.random.RandomState],
+) -> np.ndarray:
+    """ Generate a random real polynomial with roots constrained to lie within a
+    disk of given radius.
+
+    The ordering of the resulting coefficients is as in `numpy.roots`, i.e.,
+    such that the polynomial is given by
+        coeffs[0] * z**(n+1) + coeffs[1] * z**n + ... + coeffs[n]
+
+    Parameters
+    ----------
+    n
+        Number of roots.
+    radius
+        Radius within which the roots must lie.
+    rng
+        Random number generator.
+
+    Returns the coefficients of the random polynomial.
+    """
+    roots = np.zeros(n, dtype=complex)
+
+    # will need at least one real root if n is odd
+    n_complex_pairs = n // 2
+    n_complex = 2 * n_complex_pairs
+
+    # generate pairs of random complex roots
+    roots[:n_complex_pairs] = radius * _random_unit_circle(
+        rng, size=n_complex_pairs
+    )
+    roots[n_complex_pairs:n_complex] = np.conjugate(roots[:n_complex_pairs])
+
+    # generate one random real root, if necessary
+    if n % 2 != 0:
+        # ensure root is strictly smaller than `radius` in absolute value
+        roots[n_complex] = rng.uniform(-radius, radius)
+
+    # build the polynomial
+    coeffs = np.polynomial.polynomial.polyfromroots(roots)
+
+    # ensure the dtype is real (our choice of roots guarantees that the
+    # actual polynomial is real)
+    coeffs = coeffs.real
+
+    # ensure that the coefficients are ordered in the proper way
+    coeffs = np.flip(coeffs)
+
+    return coeffs
+
+
+def _random_unit_circle(
+    rng: Union[np.random.Generator, np.random.RandomState], size: int = 1
+):
+    """ Generate random complex numbers within the unit circle.
+
+    Parameters
+    ----------
+    size
+        Number of random values to generate.
+    """
+    r = np.sqrt(rng.uniform(size=size))
+    theta = rng.uniform(2 * np.pi, size=size)
+    return r * np.exp(1j * theta)

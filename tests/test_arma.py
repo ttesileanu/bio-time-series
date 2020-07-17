@@ -2,9 +2,10 @@ import unittest
 
 import numpy as np
 from numpy.random import default_rng
+from unittest import mock
 from typing import Callable, Optional
 
-from bioslds.arma import Arma
+from bioslds.arma import Arma, make_random_arma
 
 
 class TestArmaInit(unittest.TestCase):
@@ -414,6 +415,134 @@ class TestArmaCopy(unittest.TestCase):
         y2, _ = arma2_copy.transform(n - n1)
 
         np.testing.assert_allclose(y_exp, np.hstack((y1, y2)))
+
+
+class TestMakeRandomArma(unittest.TestCase):
+    def setUp(self):
+        self.rng = default_rng(101)
+
+    def test_generated_ar_has_correct_orders(self):
+        p = 3
+        ar = make_random_arma(p, 0, self.rng)
+
+        self.assertEqual(ar.p, p)
+        self.assertEqual(ar.q, 0)
+
+        self.assertEqual(len(ar.a), ar.p)
+        self.assertEqual(len(ar.b), ar.q)
+
+    def test_generated_ma_has_correct_orders(self):
+        q = 2
+        ar = make_random_arma(0, q, self.rng)
+
+        self.assertEqual(ar.p, 0)
+        self.assertEqual(ar.q, q)
+
+        self.assertEqual(len(ar.a), ar.p)
+        self.assertEqual(len(ar.b), ar.q)
+
+    def test_additional_kws_passed_to_arma_init(self):
+        kws = {"bias": 5, "default_source": lambda size: np.zeros(size)}
+        with mock.patch("bioslds.arma.Arma") as MockInit:
+            make_random_arma(2, 3, self.rng, **kws)
+
+            self.assertEqual(MockInit.call_args_list[0][1], kws)
+
+    def test_generated_arma_ar_coeffs_are_random(self):
+        arma1 = make_random_arma(3, 4, self.rng)
+        arma2 = make_random_arma(3, 4, self.rng)
+
+        self.assertFalse(np.allclose(arma1.a, arma2.a))
+
+    def test_generated_arma_ma_coeffs_are_random(self):
+        arma1 = make_random_arma(3, 4, self.rng)
+        arma2 = make_random_arma(3, 4, self.rng)
+
+        self.assertFalse(np.allclose(arma1.b, arma2.b))
+
+    def assert_if_poles_or_zeros_not_within_given_radius(
+        self, n: int, kind: str, order: int, radius: float
+    ):
+        """ Generate many AR or MA processes and check that their poles or zeros
+        are within the given radius.
+
+        Parameters
+        ----------
+        n
+            Number of processes to generate.
+        kind
+            Kind of process, either "ar" or "ma".
+        order
+            Order of the AR or MA processes.
+        radius
+            Radius to request (and check) for the poles / zeros.
+        """
+        if kind == "ar":
+            p = order
+            q = 0
+        elif kind == "ma":
+            p = 0
+            q = order
+        else:
+            raise NotImplementedError("Unknown kind.")
+
+        all_roots = []
+        for i in range(n):
+            arma = make_random_arma(
+                p, q, self.rng, max_pole_radius=radius, max_zero_radius=radius
+            )
+
+            coeffs = np.ones(order + 1)
+            if q == 0:
+                coeffs[1:] = -arma.a
+            else:
+                coeffs[1:] = arma.b
+
+            roots = np.roots(coeffs)
+            all_roots.extend(roots)
+
+        np.testing.assert_array_less(np.abs(all_roots), radius)
+
+    def test_generated_poles_within_unit_radius_by_default(self):
+        self.assert_if_poles_or_zeros_not_within_given_radius(30, "ar", 6, 1.0)
+
+    def test_generated_zeros_within_unit_radius_by_default(self):
+        self.assert_if_poles_or_zeros_not_within_given_radius(30, "ma", 6, 1.0)
+
+    def test_generated_poles_within_given_radius(self):
+        self.assert_if_poles_or_zeros_not_within_given_radius(30, "ar", 5, 0.5)
+
+    def test_generated_zeros_within_given_radius(self):
+        self.assert_if_poles_or_zeros_not_within_given_radius(30, "ma", 5, 0.7)
+
+    def test_generated_process_has_zero_bias_by_default(self):
+        arma = make_random_arma(5, 3, self.rng)
+        self.assertEqual(arma.bias, 0)
+
+    def test_generated_process_has_bias_in_given_range(self):
+        n = 20
+        bias_range = (-0.5, 0.7)
+        biases = []
+        for i in range(n):
+            arma = make_random_arma(5, 3, self.rng, bias_range=bias_range)
+            biases.append(arma.bias)
+
+        np.testing.assert_array_less(bias_range[0], biases)
+        np.testing.assert_array_less(biases, bias_range[1])
+
+    def test_generated_process_has_random_biases_when_bias_range_given(self):
+        n = 20
+        bias_range = (-0.5, 0.7)
+        biases = []
+        for i in range(n):
+            arma = make_random_arma(5, 3, self.rng, bias_range=bias_range)
+            biases.append(arma.bias)
+
+        self.assertGreater(np.std(biases), 0.0)
+
+    def test_raises_if_both_bias_range_and_bias_keyword(self):
+        with self.assertRaises(TypeError):
+            make_random_arma(3, 2, default_rng(1), bias_range=(2, 3), bias=2.5)
 
 
 if __name__ == "__main__":
