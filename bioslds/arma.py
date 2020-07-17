@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import copy
 
 from typing import Sequence, Tuple, Callable, Optional, Union
 
@@ -235,3 +236,16 @@ class Arma(object):
             bias=inv_bias,
             **kwargs,
         )
+
+    def copy(self) -> Arma:
+        """ Make a deep copy of the current process.
+
+        This ensures that the history and coefficients are copied by value so
+        that running or editing the original does not affect the copy. The
+        `default_source`, if provided, is also deep-copied.
+
+        This is equivalent to using `copy.deepcopy()`.
+
+        Returns a copy of the current process.
+        """
+        return copy.deepcopy(self)

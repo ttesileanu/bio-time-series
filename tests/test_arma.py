@@ -374,5 +374,47 @@ class TestArmaBias(unittest.TestCase):
         self.assertAlmostEqual(y[-1], y0)
 
 
+class TestArmaCopy(unittest.TestCase):
+    @staticmethod
+    def createArma(default_source: Optional[Callable] = None):
+        return Arma(
+            [-1.1, -0.6, -0.1],
+            [0.5, 0.3],
+            bias=-0.41,
+            default_source=default_source,
+        )
+
+    def test_sample_n1_then_copy_then_sample_n2_same_as_sample_n1_plus_n2(self):
+        n = 90
+        rng = default_rng(2)
+        u = rng.normal(size=n)
+
+        n1 = 3 * n // 5
+        arma1 = self.createArma()
+        y_exp, _ = arma1.transform(U=u)
+
+        arma2 = self.createArma()
+        y1, _ = arma2.transform(U=u[:n1])
+        arma2_copy = arma2.copy()
+        y2, _ = arma2_copy.transform(U=u[n1:])
+
+        np.testing.assert_allclose(y_exp, np.hstack((y1, y2)))
+
+    def test_deep_copy_of_pseudorandom_state(self):
+        n = 85
+
+        n1 = 2 * n // 5
+        seed = 51
+        arma1 = self.createArma(default_source=default_rng(seed).normal)
+        y_exp, _ = arma1.transform(n)
+
+        arma2 = self.createArma(default_source=default_rng(seed).normal)
+        y1, _ = arma2.transform(n1)
+        arma2_copy = arma2.copy()
+        y2, _ = arma2_copy.transform(n - n1)
+
+        np.testing.assert_allclose(y_exp, np.hstack((y1, y2)))
+
+
 if __name__ == "__main__":
     unittest.main()
