@@ -90,7 +90,7 @@ class GaussianNoise(object):
         loc
             Location (mean) of distribution.
         scale
-            Scale (standard devation) of distribution.
+            Scale (standard deviation) of distribution.
         """
         if isinstance(rng, int):
             rng = np.random.default_rng(rng)
