@@ -266,5 +266,47 @@ class TestArmaIsInvertible(unittest.TestCase):
         self.assertTrue(arma.is_invertible())
 
 
+class TestArmaInverseBasic(unittest.TestCase):
+    def test_inverse_pure_ar_is_pure_ma(self):
+        arma = Arma([0.5, 0.3], [])
+        inv_arma = arma.inverse()
+
+        self.assertEqual(inv_arma.p, 0)
+        self.assertEqual(len(inv_arma.a), 0)
+
+    def test_inverse_pure_ma_is_pure_ar(self):
+        arma = Arma([], [-1.1, -0.6, -0.1])
+        inv_arma = arma.inverse()
+
+        self.assertEqual(inv_arma.q, 0)
+        self.assertEqual(len(inv_arma.b), 0)
+
+    def test_inverse_arma_switches_orders(self):
+        arma = Arma([-1.1, -0.6, -0.1], [0.5, 0.3])
+        inv_arma = arma.inverse()
+
+        self.assertEqual(inv_arma.p, arma.q)
+        self.assertEqual(inv_arma.q, arma.p)
+
+        self.assertEqual(len(inv_arma.a), inv_arma.p)
+        self.assertEqual(len(inv_arma.b), inv_arma.q)
+
+
+class TestArmaInverse(unittest.TestCase):
+    def setUp(self):
+        rng = default_rng(5)
+        self.n = 101
+        self.u = rng.normal(size=self.n)
+
+    def test_inverse_recovers_input_with_zero_bias(self):
+        arma = Arma([-1.1, -0.6, -0.1], [0.5, 0.3])
+        inv_arma = arma.inverse()
+
+        y, _ = arma.transform(U=self.u)
+        u_again, _ = inv_arma.transform(U=y)
+
+        np.testing.assert_allclose(self.u, u_again)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,5 +1,7 @@
 """ Define a class to generate samples from ARMA processes. """
 
+from __future__ import annotations
+
 import numpy as np
 
 from typing import Sequence, Tuple, Callable, Optional, Union
@@ -208,3 +210,24 @@ class Arma(object):
         b_coeffs[1:] = self.b
         roots = np.roots(b_coeffs)
         return all(np.abs(roots) < 1)
+
+    def inverse(self, **kwargs) -> Arma:
+        """ Return the inverse process.
+
+        The inverse is defined by the condition that, when applied to the output
+        of the current process, it returns its input.
+
+        All keyword arguments are passed to `Arma.__init__`.
+
+        Returns the inverse process.
+        """
+        inv_a = -self.b
+        inv_b = -self.a
+        inv_bias = 0
+
+        return Arma(
+            inv_a,
+            inv_b,
+            bias=inv_bias,
+            **kwargs,
+        )
