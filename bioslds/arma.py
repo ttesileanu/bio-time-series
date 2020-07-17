@@ -227,7 +227,7 @@ class Arma(object):
         """
         inv_a = -self.b
         inv_b = -self.a
-        inv_bias = 0
+        inv_bias = -self.bias
 
         return Arma(
             inv_a,

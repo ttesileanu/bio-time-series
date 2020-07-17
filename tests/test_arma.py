@@ -339,6 +339,15 @@ class TestArmaInverse(unittest.TestCase):
 
         np.testing.assert_allclose(self.u, u_again)
 
+    def test_inverse_recovers_input_with_nonzero_bias(self):
+        arma = Arma([1.3, -0.8, 0.2, -0.1], [-0.3, 0.5], bias=0.6)
+        inv_arma = arma.inverse()
+
+        y, _ = arma.transform(U=self.u)
+        u_again, _ = inv_arma.transform(U=y)
+
+        np.testing.assert_allclose(self.u, u_again)
+
 
 class TestArmaBias(unittest.TestCase):
     def test_trivial_arma_with_bias_no_noise(self):
