@@ -3,6 +3,7 @@ import unittest
 import numpy as np
 
 import bioslds.sources as sources
+from bioslds.arma import make_random_arma
 
 
 class TestSourcesConstant(unittest.TestCase):
@@ -145,6 +146,102 @@ class TestSourcesGaussianNoise(unittest.TestCase):
         y2 = src2(size=n)
 
         np.testing.assert_allclose(y1, y2)
+
+
+class TestSourcesFixSourceScale(unittest.TestCase):
+    def test_fix_source_scale_does_not_affect_sources_rng_by_default(self):
+        seed = 123
+        src1 = sources.GaussianNoise(seed)
+
+        n = 12
+        u1 = src1(size=n)
+
+        rng = np.random.default_rng(30)
+        src2 = sources.GaussianNoise(seed)
+        arma = make_random_arma(3, 2, rng, default_source=src2)
+
+        sources.fix_source_scale(arma)
+
+        # reset scale
+        src2.scale = 1
+        u2 = src2(size=n)
+
+        np.testing.assert_allclose(u1, u2)
+
+    def test_fix_source_scale_affects_sources_rng_when_use_copy_is_false(self):
+        seed = 123
+        src1 = sources.GaussianNoise(seed)
+
+        n = 12
+        u1 = src1(size=n)
+
+        rng = np.random.default_rng(30)
+        src2 = sources.GaussianNoise(seed)
+        arma = make_random_arma(3, 2, rng, default_source=src2)
+
+        sources.fix_source_scale(arma, use_copy=False)
+
+        # reset scale
+        src2.scale = 1
+        u2 = src2(size=n)
+
+        self.assertGreater(np.max(np.abs(u1 - u2)), 1e-3)
+
+    def test_ar1_output_variance_is_fixed_to_one_by_default(self):
+        seed = 10
+        src = sources.GaussianNoise(seed)
+
+        rng = np.random.default_rng(30)
+        arma = make_random_arma(1, 0, rng, default_source=src)
+
+        sources.fix_source_scale(arma, n_samples=5000)
+        ma_var = src.scale ** 2
+        arma_var = ma_var / (1 - arma.a[0] ** 2)
+
+        self.assertAlmostEqual(arma_var, 1, places=2)
+
+    def test_ar2_output_variance_is_fixed_to_one_by_default(self):
+        seed = 10
+        src = sources.GaussianNoise(seed)
+
+        rng = np.random.default_rng(30)
+        arma = make_random_arma(2, 0, rng, default_source=src)
+
+        sources.fix_source_scale(arma, n_samples=5000)
+        ma_var = src.scale ** 2
+        a_diff = 1 - arma.a[1]
+        a_sum = 1 + arma.a[1]
+        arma_var = a_diff * ma_var / (a_sum * (a_diff ** 2 - arma.a[0] ** 2))
+
+        self.assertAlmostEqual(arma_var, 1, places=2)
+
+    def test_scale_varies_in_proportion_to_output_variance(self):
+        seed = 10
+        src = sources.GaussianNoise(seed)
+
+        rng = np.random.default_rng(30)
+        arma = make_random_arma(2, 0, rng, default_source=src)
+
+        var1 = 0.5
+        sources.fix_source_scale(arma, output_std=var1)
+        scale1 = src.scale
+
+        var2 = 1.5
+        sources.fix_source_scale(arma, output_std=var2)
+        scale2 = src.scale
+
+        self.assertAlmostEqual(var1 / var2, scale1 / scale2, places=2)
+
+    def test_fix_source_scale_returns_final_scale(self):
+        seed = 10
+        src = sources.GaussianNoise(seed)
+
+        rng = np.random.default_rng(30)
+        arma = make_random_arma(2, 0, rng, default_source=src)
+
+        scale = sources.fix_source_scale(arma)
+
+        self.assertAlmostEqual(scale, src.scale)
 
 
 if __name__ == "__main__":
