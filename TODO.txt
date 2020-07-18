@@ -1,5 +1,8 @@
-* implement convenient sources for Arma
+* implement more efficient Arma
+  * maybe check whether Numba helps?
 * Arma integration tests
   * use with a random source
+    * check location + scale work
+    * check distribution, ensure fix_source_scale works
   * benchmark speed of various `_mode`s
   * show distribution of generated poles / zeros
