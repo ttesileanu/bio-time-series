@@ -188,6 +188,28 @@ class Arma(object):
         )
         return r
 
+    def calculate_poles(self) -> np.ndarray:
+        """ Find the poles for the ARMA process.
+
+        Returns the poles -- the complex roots of the polynomial
+            z**p - a[0] * z**(p-1) - ... - a[p-1] .
+        """
+        a_coeffs = np.ones(self.p + 1)
+        a_coeffs[1:] = -self.a
+        roots = np.roots(a_coeffs)
+        return roots
+
+    def calculate_zeros(self) -> np.ndarray:
+        """ Find the zeros for the ARMA process.
+
+        Returns the zeros -- the complex roots of the polynomial
+            z**q + b[0] * z**(q-1) + ... + b[q-1]
+        """
+        b_coeffs = np.ones(self.q + 1)
+        b_coeffs[1:] = self.b
+        roots = np.roots(b_coeffs)
+        return roots
+
     def is_stable(self) -> bool:
         """ Check whether the system is stable.
 
@@ -197,10 +219,8 @@ class Arma(object):
 
         Returns true if the system is stable.
         """
-        a_coeffs = np.ones(self.p + 1)
-        a_coeffs[1:] = -self.a
-        roots = np.roots(a_coeffs)
-        return all(np.abs(roots) < 1)
+        poles = self.calculate_poles()
+        return all(np.abs(poles) < 1)
 
     def is_invertible(self) -> bool:
         """ Check whether the system is invertible.
@@ -211,10 +231,8 @@ class Arma(object):
 
         Returns true if the system is invertible.
         """
-        b_coeffs = np.ones(self.q + 1)
-        b_coeffs[1:] = self.b
-        roots = np.roots(b_coeffs)
-        return all(np.abs(roots) < 1)
+        zeros = self.calculate_zeros()
+        return all(np.abs(zeros) < 1)
 
     def inverse(self, **kwargs) -> Arma:
         """ Return the inverse process.

@@ -545,5 +545,125 @@ class TestMakeRandomArma(unittest.TestCase):
             make_random_arma(3, 2, default_rng(1), bias_range=(2, 3), bias=2.5)
 
 
+class TestArmaCalculatePoles(unittest.TestCase):
+    def test_number_of_poles_matches_ar_order(self):
+        p = 6
+        rng = default_rng(4)
+        ar = Arma(rng.normal(size=p), [])
+        poles = ar.calculate_poles()
+
+        self.assertEqual(len(poles), p)
+
+    def test_poles_independent_of_ma(self):
+        p = 5
+        rng = default_rng(5)
+        a = rng.normal(size=p)
+        arma1 = Arma(a, rng.normal(size=3))
+        arma2 = Arma(a, rng.normal(size=5))
+
+        poles1 = arma1.calculate_poles()
+        poles2 = arma2.calculate_poles()
+
+        np.testing.assert_allclose(poles1, poles2)
+
+    def test_ar1(self):
+        a = [0.7]
+        ar1 = Arma(a, [])
+        poles = ar1.calculate_poles()
+
+        self.assertEqual(len(poles), 1)
+        self.assertAlmostEqual(poles[0], a[0])
+
+    def test_ar2(self):
+        a = [0.5, -0.7]
+        ar2 = Arma(a, [])
+        poles = ar2.calculate_poles()
+
+        self.assertEqual(len(poles), 2)
+
+        pole_prod = np.prod(poles)
+        pole_sum = np.sum(poles)
+
+        np.testing.assert_allclose(pole_sum, a[0], atol=1e-8)
+        np.testing.assert_allclose(pole_prod, -a[1], atol=1e-8)
+
+    def test_product_of_monomials_based_on_poles_recovers_ar_coeffs(self):
+        p = 5
+        q = 3
+        rng = default_rng(2)
+        arma = Arma(rng.normal(size=p), rng.normal(size=q))
+
+        poles = arma.calculate_poles()
+        coeffs = np.polynomial.polynomial.polyfromroots(poles)
+
+        # make sure the coefficients are real, up to tolerance
+        self.assertLess(np.max(np.abs(np.imag(coeffs))), 1e-6)
+
+        # ensure that the coefficients are ordered in the proper way
+        coeffs = np.flip(coeffs.real)
+
+        np.testing.assert_allclose(coeffs[1:], -arma.a)
+
+
+class TestArmaCalculateZeros(unittest.TestCase):
+    def test_number_of_zeros_matches_ma_order(self):
+        q = 5
+        rng = default_rng(3)
+        ma = Arma([], rng.normal(size=q))
+        zeros = ma.calculate_zeros()
+
+        self.assertEqual(len(zeros), q)
+
+    def test_zeros_independent_of_ar(self):
+        q = 5
+        rng = default_rng(5)
+        b = rng.normal(size=q)
+        arma1 = Arma(rng.normal(size=3), b)
+        arma2 = Arma(rng.normal(size=5), b)
+
+        zeros1 = arma1.calculate_zeros()
+        zeros2 = arma2.calculate_zeros()
+
+        np.testing.assert_allclose(zeros1, zeros2)
+
+    def test_ma1(self):
+        b = [0.6]
+        ma1 = Arma([], b)
+        zeros = ma1.calculate_zeros()
+
+        self.assertEqual(len(zeros), 1)
+        self.assertAlmostEqual(zeros[0], -b[0])
+
+    def test_ma2(self):
+        b = [-0.5, -0.3]
+        ma2 = Arma([], b)
+        zeros = ma2.calculate_zeros()
+
+        self.assertEqual(len(zeros), 2)
+
+        zero_prod = np.prod(zeros)
+        zero_sum = np.sum(zeros)
+
+        np.testing.assert_allclose(zero_sum, -b[0], atol=1e-8)
+        np.testing.assert_allclose(zero_prod, b[1], atol=1e-8)
+
+    def test_product_of_monomials_based_on_zeros_recovers_ma_coeffs(self):
+        p = 4
+        q = 4
+        rng = default_rng(2)
+        arma = Arma(rng.normal(size=p), rng.normal(size=q))
+
+        zeros = arma.calculate_zeros()
+        coeffs = np.polynomial.polynomial.polyfromroots(zeros)
+
+        # make sure the coefficients are real, up to tolerance
+        self.assertLess(np.max(np.abs(np.imag(coeffs))), 1e-6)
+
+        # ensure that the coefficients are ordered in the proper way
+        coeffs = np.flip(coeffs.real)
+
+        np.testing.assert_allclose(coeffs[1:], arma.b)
+
+
 if __name__ == "__main__":
     unittest.main()
