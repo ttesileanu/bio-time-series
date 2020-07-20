@@ -378,5 +378,9 @@ def _random_unit_circle(
         Number of random values to generate.
     """
     r = np.sqrt(rng.uniform(size=size))
-    theta = rng.uniform(2 * np.pi, size=size)
+    # !!! unlike RandomState.randint / Generator.integers, passing only one
+    # !!! positional argument to `uniform` *does not* mean drawing numbers
+    # !!! between 0 and that value. It instead samples number between *1* (the
+    # !!! default `high`) and that value !!!
+    theta = rng.uniform(0, 2 * np.pi, size=size)
     return r * np.exp(1j * theta)
