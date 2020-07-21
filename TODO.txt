@@ -1,2 +1,5 @@
-* implement more efficient Arma
-  * maybe check whether Numba helps?
+* Implement ArmaHSMM
+  * hidden semi-Markov model
+    - allow state durations to be drawn from non-trivial distributions
+      - most importantly for us: lower bound on the time in each state
+  * also allow for a timeline provided by the user
