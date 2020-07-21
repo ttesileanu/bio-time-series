@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 import copy
 
+from numba import njit
 from typing import Sequence, Tuple, Callable, Optional, Union
 
 
@@ -95,7 +96,7 @@ class Arma(object):
 
         # _mode allows us to choose legacy implementations
         # useful for testing
-        self._mode = "ma_conv"
+        self._mode = "ma_conv_ar_numba"
 
     def transform(
         self,
@@ -162,6 +163,8 @@ class Arma(object):
         transform_dict = {
             "naive": self._transform_naive,
             "ma_conv": self._transform_ma_conv,
+            "ma_conv_ar_numba": self._transform_ma_conv_ar_numba,
+            "numba": self._transform_numba,
         }
         transform_fct = transform_dict[self._mode]
         # noinspection PyArgumentList
@@ -201,6 +204,33 @@ class Arma(object):
         for i in range(n):
             ar_part = np.dot(a_flip, y_out_full[i : i + self.p])
             y_out_full[i + self.p] = ar_part + u[i] + self.bias
+
+    def _transform_ma_conv_ar_numba(
+        self, y_out_full: np.ndarray, u_out_full: np.ndarray
+    ):
+        """ Perform the transformation using `np.convolve` for MA part and
+        Numba-accelerated code for AR. """
+        b_ext = np.hstack(([1], self.b))
+        u = np.convolve(u_out_full, b_ext, mode="valid")
+
+        if self.p > 0:
+            _perform_ar(y_out_full, u, np.flip(self.a), self.p, self.bias)
+        else:
+            y_out_full[self.p :] = u + self.bias
+
+    def _transform_numba(self, y_out_full: np.ndarray, u_out_full: np.ndarray):
+        """ Perform the transformation using Numba-accelerated version of naive
+        algorithm. """
+        if self.q > 0:
+            b_flip_big = np.hstack((np.flip(self.b), [1]))
+            u = _perform_ma(u_out_full, b_flip_big)
+        else:
+            u = u_out_full
+
+        if self.p > 0:
+            _perform_ar(y_out_full, u, np.flip(self.a), self.p, self.bias)
+        else:
+            y_out_full[self.p :] = u + self.bias
 
     def __str__(self) -> str:
         s = f"Arma(a={str(self.a)}, b={str(self.b)}, bias={str(self.bias)})"
@@ -289,7 +319,31 @@ class Arma(object):
         """
         return copy.deepcopy(self)
 
-    _available_modes = ["naive", "ma_conv"]
+    _available_modes = ["naive", "ma_conv", "ma_conv_ar_numba", "numba"]
+
+
+@njit
+def _perform_ar(
+    y: np.ndarray, u: np.ndarray, a_flip: np.ndarray, p: int, bias: float
+):
+    n = len(y) - p
+    for i in range(n):
+        crt_past = y[i : i + p]
+        ar_part = np.dot(a_flip, crt_past)
+        y[i + p] = ar_part + u[i] + bias
+
+
+@njit
+def _perform_ma(u_out_full: np.ndarray, b_flip_big: np.ndarray) -> np.ndarray:
+    q_big = len(b_flip_big)
+    q = q_big - 1
+    n = len(u_out_full) - q
+    u = np.empty(n)
+
+    for i in range(n):
+        u[i] = np.dot(b_flip_big, u_out_full[i: i + q_big])
+
+    return u
 
 
 def make_random_arma(
