@@ -188,7 +188,9 @@ class Arma(object):
             ma_part = np.dot(b_flip_big, u_out_full[i : i + self.q + 1])
             y_out_full[i + self.p] = ar_part + ma_part + self.bias
 
-    def _transform_ma_conv(self, y_out_full: np.ndarray, u_out_full: np.ndarray):
+    def _transform_ma_conv(
+        self, y_out_full: np.ndarray, u_out_full: np.ndarray
+    ):
         """ Perform the transformation using a naive, slow algorithm. """
         n = len(y_out_full) - self.p
         a_flip = np.flip(self.a)
