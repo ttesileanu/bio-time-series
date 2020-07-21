@@ -95,7 +95,7 @@ class Arma(object):
 
         # _mode allows us to choose legacy implementations
         # useful for testing
-        self._mode = "naive"
+        self._mode = "ma_conv"
 
     def transform(
         self,
@@ -151,20 +151,21 @@ class Arma(object):
         n = len(U)
         if n == 0:
             return np.array([]), np.array([])
-        y_out_full = np.zeros(n + self.p)
-        u_out_full = np.zeros(n + self.q)
 
-        y_out_full[: self.p] = self.history_[0]
+        u_out_full = np.zeros(n + self.q)
         u_out_full[: self.q] = self.history_[1]
         u_out_full[self.q :] = U
 
-        a_flip = np.flip(self.a)
-        b_flip_big = np.hstack((np.flip(self.b), [1]))
+        y_out_full = np.zeros(n + self.p)
+        y_out_full[: self.p] = self.history_[0]
 
-        for i in range(n):
-            ar_part = np.dot(a_flip, y_out_full[i : i + self.p])
-            ma_part = np.dot(b_flip_big, u_out_full[i : i + self.q + 1])
-            y_out_full[i + self.p] = ar_part + ma_part + self.bias
+        transform_dict = {
+            "naive": self._transform_naive,
+            "ma_conv": self._transform_ma_conv,
+        }
+        transform_fct = transform_dict[self._mode]
+        # noinspection PyArgumentList
+        transform_fct(y_out_full, u_out_full)
 
         # update history
         if self.p > 0:
@@ -175,6 +176,29 @@ class Arma(object):
         y_out = y_out_full[self.p :]
         u_out = u_out_full[self.q :]
         return y_out, u_out
+
+    def _transform_naive(self, y_out_full: np.ndarray, u_out_full: np.ndarray):
+        """ Perform the transformation using a naive, slow algorithm. """
+        n = len(y_out_full) - self.p
+        a_flip = np.flip(self.a)
+        b_flip_big = np.hstack((np.flip(self.b), [1]))
+
+        for i in range(n):
+            ar_part = np.dot(a_flip, y_out_full[i : i + self.p])
+            ma_part = np.dot(b_flip_big, u_out_full[i : i + self.q + 1])
+            y_out_full[i + self.p] = ar_part + ma_part + self.bias
+
+    def _transform_ma_conv(self, y_out_full: np.ndarray, u_out_full: np.ndarray):
+        """ Perform the transformation using a naive, slow algorithm. """
+        n = len(y_out_full) - self.p
+        a_flip = np.flip(self.a)
+
+        b_ext = np.hstack(([1], self.b))
+        u = np.convolve(u_out_full, b_ext, mode="valid")
+
+        for i in range(n):
+            ar_part = np.dot(a_flip, y_out_full[i : i + self.p])
+            y_out_full[i + self.p] = ar_part + u[i] + self.bias
 
     def __str__(self) -> str:
         s = f"Arma(a={str(self.a)}, b={str(self.b)}, bias={str(self.bias)})"
@@ -262,6 +286,8 @@ class Arma(object):
         Returns a copy of the current process.
         """
         return copy.deepcopy(self)
+
+    _available_modes = ["naive", "ma_conv"]
 
 
 def make_random_arma(
