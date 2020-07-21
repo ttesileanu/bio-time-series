@@ -194,7 +194,7 @@ class Arma(object):
     def _transform_ma_conv(
         self, y_out_full: np.ndarray, u_out_full: np.ndarray
     ):
-        """ Perform the transformation using a naive, slow algorithm. """
+        """ Perform the transformation using `np.convolve` for the MA part. """
         n = len(y_out_full) - self.p
         a_flip = np.flip(self.a)
 
@@ -341,7 +341,7 @@ def _perform_ma(u_out_full: np.ndarray, b_flip_big: np.ndarray) -> np.ndarray:
     u = np.empty(n)
 
     for i in range(n):
-        u[i] = np.dot(b_flip_big, u_out_full[i: i + q_big])
+        u[i] = np.dot(b_flip_big, u_out_full[i : i + q_big])
 
     return u
 
