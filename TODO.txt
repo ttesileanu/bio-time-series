@@ -1,4 +1,2 @@
 * implement more efficient Arma
   * maybe check whether Numba helps?
-* Arma integration tests
-  * benchmark speed of various `_mode`s
