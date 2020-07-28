@@ -40,10 +40,10 @@ class SemiMarkov(object):
         `trans_mat`, and the fact that `j` cannot be the same as `i`. The only
         difference between different semi-Markov models is the distribution used
         to draw the dwell time (see below).
-    min_dwell : array of int, shape (n_components, )
+    min_dwell : array of float, shape (n_components, )
         Minimum dwell times per state.
-    max_dwell : array of int, shape (n_components, )
-        Maximum dwell times per state.
+    max_dwell : array of float, shape (n_components, )
+        Maximum dwell times per state (inclusive).
     """
 
     def __init__(
@@ -74,7 +74,7 @@ class SemiMarkov(object):
         min_dwell
             Minimum dwell time for each state.
         max_dwell
-            Maximum dwell time for each state.
+            Maximum dwell time for each state (inclusive).
         """
         self.n_components = n_components
 
@@ -96,6 +96,16 @@ class SemiMarkov(object):
         else:
             self.rng = np.random.default_rng(rng)
 
+        if hasattr(min_dwell, "__len__"):
+            self.min_dwell = np.asarray(min_dwell)
+        else:
+            self.min_dwell = np.repeat(min_dwell, self.n_components)
+
+        if hasattr(max_dwell, "__len__"):
+            self.max_dwell = np.asarray(max_dwell)
+        else:
+            self.max_dwell = np.repeat(max_dwell, self.n_components)
+
         # _mode allows us to choose legacy implementations
         # useful for testing
         self._mode = "naive"
@@ -116,9 +126,27 @@ class SemiMarkov(object):
 
         seq = np.zeros(n, dtype=int)
         seq[0] = self.rng.choice(self.n_components, p=self.start_prob)
+        dwell_time = 1
         for i in range(1, len(seq)):
-            seq[i] = self.rng.choice(
-                self.n_components, p=self.trans_mat[seq[i - 1]]
-            )
+            crt_min_dwell = self.min_dwell[seq[i - 1]]
+            crt_max_dwell = self.max_dwell[seq[i - 1]]
+            if crt_min_dwell <= dwell_time < crt_max_dwell:
+                seq[i] = self.rng.choice(
+                    self.n_components, p=self.trans_mat[seq[i - 1]]
+                )
+            elif dwell_time < crt_min_dwell:
+                # we need to stay in this state longer
+                seq[i] = seq[i - 1]
+            else:
+                # we need to move away from this state
+                crt_p = np.copy(self.trans_mat[seq[i - 1]])
+                crt_p[seq[i - 1]] = 0
+                crt_p = crt_p / np.sum(crt_p)
+                seq[i] = self.rng.choice(self.n_components, p=crt_p)
+
+            if seq[i] == seq[i - 1]:
+                dwell_time += 1
+            else:
+                dwell_time = 1
 
         return seq

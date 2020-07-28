@@ -187,29 +187,66 @@ class TestSemiMarkovSampleOutputHasCorrectLength(unittest.TestCase):
 
         self.assertEqual(len(seq), n)
 
+    def test_semi_markov(self):
+        smm = SemiMarkov(5, min_dwell=3, max_dwell=13)
 
-class TestSemiMarkovRepeatedCallsToSample(unittest.TestCase):
+        n = 28
+        seq = smm.sample(n)
+
+        self.assertEqual(len(seq), n)
+
+
+class TestSemiMarkovDwellTimeConstraintsObeyed(unittest.TestCase):
     def setUp(self):
         self.n_components = 4
-        self.seed = 5
+        self.min_dwell = [2, 3, 1, 0]
+        self.max_dwell = [5, 3, np.inf, 4]
+        self.trans_mat = (
+            3 * np.eye(self.n_components)
+            + np.ones((self.n_components, self.n_components))
+        ) / (self.n_components + 3)
+        self.smm = SemiMarkov(
+            self.n_components,
+            trans_mat=self.trans_mat,
+            min_dwell=self.min_dwell,
+            max_dwell=self.max_dwell,
+        )
 
-    def create_pure_markov(self):
-        return SemiMarkov(self.n_components, rng=self.seed)
+    @staticmethod
+    def to_rle(seq: np.ndarray) -> list:
+        starts = np.hstack(([0], np.diff(seq).nonzero()[0] + 1, len(seq)))
+        rle = [
+            (seq[tmp1], tmp2 - tmp1) for tmp1, tmp2 in zip(starts, starts[1:])
+        ]
 
-    def test_pure_markov_sample_n1_then_n2_same_as_sample_n1_plus_n2(self):
-        smm1 = self.create_pure_markov()
-        smm2 = self.create_pure_markov()
+        return rle
 
-        n1 = 32
-        n2 = 54
+    def test_dwell_times_reach_minimum_but_do_not_go_below(self):
+        seq = self.smm.sample(300)
+        seq_rle = self.to_rle(seq)
 
-        seq1 = smm1.sample(n1 + n2)
+        for i in range(self.n_components):
+            dwell_times = [_[1] for _ in seq_rle if _[0] == i]
 
-        seq2a = smm2.sample(n1)
-        seq2b = smm2.sample(n2)
-        seq2 = np.hstack((seq2a, seq2b))
+            self.assertGreater(len(dwell_times), 0, f"State {i} does not occur")
+            self.assertEqual(
+                np.min(dwell_times), max(1, self.min_dwell[i]), f"State {i}"
+            )
 
-        np.testing.assert_equal(seq1, seq2)
+    def test_dwell_times_reach_maximum_but_do_not_go_above(self):
+        seq = self.smm.sample(300)
+        seq_rle = self.to_rle(seq)
+
+        for i in range(self.n_components):
+            dwell_times = [_[1] for _ in seq_rle if _[0] == i]
+
+            self.assertGreater(len(dwell_times), 0, f"State {i} does not occur")
+            if np.isfinite(self.max_dwell[i]):
+                self.assertEqual(
+                    np.max(dwell_times), self.max_dwell[i], f"State {i}"
+                )
+            else:
+                self.assertGreater(len(np.unique(dwell_times)), 0, f"State {i}")
 
 
 if __name__ == "__main__":
