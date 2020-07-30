@@ -207,7 +207,7 @@ class TestSourcesFixSourceScale(unittest.TestCase):
         rng = np.random.default_rng(30)
         arma = make_random_arma(2, 0, rng, default_source=src)
 
-        sources.fix_source_scale(arma, n_samples=5000)
+        sources.fix_source_scale(arma, n_samples=10000)
         ma_var = src.scale ** 2
         a_diff = 1 - arma.a[1]
         a_sum = 1 + arma.a[1]
