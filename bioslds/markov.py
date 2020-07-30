@@ -257,3 +257,20 @@ class SemiMarkov(object):
                 dwell_p[i] = crt_p
 
         return dwell_p
+
+    def __str__(self) -> str:
+        s = (f"SemiMarkov(start_prob={str(self.start_prob)}, " +
+             f"trans_mat={str(self.trans_mat)}, " +
+             f"dwell_times={str(self.dwell_times)}, " +
+             f"min_dwell={str(self.min_dwell)}, " +
+             f"max_dwell={str(self.max_dwell)})")
+        return s
+
+    def __repr__(self) -> str:
+        r = (f"SemiMarkov(start_prob={repr(self.start_prob)}, " +
+             f"trans_mat={repr(self.trans_mat)}, " +
+             f"dwell_times={repr(self.dwell_times)}, " +
+             f"min_dwell={repr(self.min_dwell)}, " +
+             f"max_dwell={repr(self.max_dwell)}, " +
+             f"rng={repr(self.rng)})")
+        return r

@@ -337,5 +337,59 @@ class TestSemiMarkovInitRaisesOnInvalidDwellTimes(unittest.TestCase):
             SemiMarkov(2, dwell_times=[100, 10], max_dwell=20)
 
 
+class TestArmaStrAndRepr(unittest.TestCase):
+    def setUp(self):
+        self.n_components = 3
+        self.start_prob = np.asarray([0.2, 0.5, 0.3])
+        self.trans_mat = np.asarray(
+            [[0.0, 0.3, 0.7], [0.1, 0.0, 0.9], [0.5, 0.5, 0.0]]
+        )
+        self.dwell_times = np.asarray([2.5, 4.5, 3.0])
+        self.min_dwell = np.asarray([2, 3, 1])
+        self.max_dwell = np.asarray([np.inf, 10, 8])
+        self.rng = np.random.default_rng(4)
+
+        self.smm = SemiMarkov(
+            self.n_components,
+            start_prob=self.start_prob,
+            trans_mat=self.trans_mat,
+            dwell_times=self.dwell_times,
+            min_dwell=self.min_dwell,
+            max_dwell=self.max_dwell,
+            rng=self.rng,
+        )
+
+    def test_str(self):
+        s = str(self.smm)
+        s_exp = (
+            "SemiMarkov(start_prob={}, trans_mat={}, dwell_times={}, "
+            + "min_dwell={}, max_dwell={})"
+        ).format(
+            str(self.start_prob),
+            str(self.trans_mat),
+            str(self.dwell_times),
+            str(self.min_dwell),
+            str(self.max_dwell),
+        )
+
+        self.assertEqual(s, s_exp)
+
+    def test_repr(self):
+        r = repr(self.smm)
+        r_exp = (
+            "SemiMarkov(start_prob={}, trans_mat={}, dwell_times={}, "
+            + "min_dwell={}, max_dwell={}, rng={})"
+        ).format(
+            repr(self.start_prob),
+            repr(self.trans_mat),
+            repr(self.dwell_times),
+            repr(self.min_dwell),
+            repr(self.max_dwell),
+            repr(self.rng),
+        )
+
+        self.assertEqual(r, r_exp)
+
+
 if __name__ == "__main__":
     unittest.main()
