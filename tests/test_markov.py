@@ -147,11 +147,10 @@ class TestSemiMarkovZeroProbabilityTransitions(unittest.TestCase):
 
     def test_absorbing_state(self):
         n_components = 3
-        trans_mat = np.ones((n_components, n_components)) / n_components
         abs_idx = 2
-        trans_mat[abs_idx, :] = np.zeros(n_components)
-        trans_mat[abs_idx, abs_idx] = 1
-        smm = SemiMarkov(n_components, trans_mat=trans_mat)
+        dwell_times = np.ones(n_components)
+        dwell_times[abs_idx] = np.inf
+        smm = SemiMarkov(n_components, dwell_times=dwell_times)
 
         n_seq = 10
         n = 16
@@ -165,9 +164,21 @@ class TestSemiMarkovZeroProbabilityTransitions(unittest.TestCase):
             # and stay there once we've reached it
             np.testing.assert_equal(seq[where_abs[0] :], abs_idx)
 
-    def test_all_transitions_occur_by_default(self):
+    def test_all_non_dwelling_transitions_occur_by_default(self):
         n_components = 3
         smm = SemiMarkov(n_components, rng=4)
+
+        n_seq = 5
+        n = 200
+        for i in range(n_seq):
+            seq = smm.sample(n)
+            pairs = set(zip(seq, seq[1:]))
+
+            self.assertEqual(len(pairs), n_components * (n_components - 1))
+
+    def test_all_transitions_occur_if_dwell_time_larger_than_one(self):
+        n_components = 3
+        smm = SemiMarkov(n_components, rng=5, dwell_times=2.0)
 
         n_seq = 5
         n = 200
@@ -188,7 +199,7 @@ class TestSemiMarkovSampleOutputHasCorrectLength(unittest.TestCase):
         self.assertEqual(len(seq), n)
 
     def test_semi_markov(self):
-        smm = SemiMarkov(5, min_dwell=3, max_dwell=13)
+        smm = SemiMarkov(5, min_dwell=3, max_dwell=13, dwell_times=4.3)
 
         n = 28
         seq = smm.sample(n)
@@ -201,15 +212,12 @@ class TestSemiMarkovDwellTimeConstraintsObeyed(unittest.TestCase):
         self.n_components = 4
         self.min_dwell = [2, 3, 1, 0]
         self.max_dwell = [5, 3, np.inf, 4]
-        self.trans_mat = (
-            3 * np.eye(self.n_components)
-            + np.ones((self.n_components, self.n_components))
-        ) / (self.n_components + 3)
+        self.dwell_times = [2.5, 3.0, 3.5, 2.0]
         self.smm = SemiMarkov(
             self.n_components,
-            trans_mat=self.trans_mat,
             min_dwell=self.min_dwell,
             max_dwell=self.max_dwell,
+            dwell_times=self.dwell_times,
         )
 
     @staticmethod
@@ -226,7 +234,8 @@ class TestSemiMarkovDwellTimeConstraintsObeyed(unittest.TestCase):
         seq_rle = self.to_rle(seq)
 
         for i in range(self.n_components):
-            dwell_times = [_[1] for _ in seq_rle if _[0] == i]
+            # last element of RLE might be truncated due to n_samples
+            dwell_times = [_[1] for _ in seq_rle[:-1] if _[0] == i]
 
             self.assertGreater(len(dwell_times), 0, f"State {i} does not occur")
             self.assertEqual(
@@ -238,7 +247,8 @@ class TestSemiMarkovDwellTimeConstraintsObeyed(unittest.TestCase):
         seq_rle = self.to_rle(seq)
 
         for i in range(self.n_components):
-            dwell_times = [_[1] for _ in seq_rle if _[0] == i]
+            # last element of RLE might be truncated due to n_samples
+            dwell_times = [_[1] for _ in seq_rle[:-1] if _[0] == i]
 
             self.assertGreater(len(dwell_times), 0, f"State {i} does not occur")
             if np.isfinite(self.max_dwell[i]):
@@ -247,6 +257,74 @@ class TestSemiMarkovDwellTimeConstraintsObeyed(unittest.TestCase):
                 )
             else:
                 self.assertGreater(len(np.unique(dwell_times)), 0, f"State {i}")
+
+
+class TestSemiMarkovTransMatHandling(unittest.TestCase):
+    def test_diagonal_trans_mat_elements_are_ignored(self):
+        ns = 5
+        rng = np.random.default_rng(1)
+        trans_mat1 = rng.uniform(size=(ns, ns))
+        trans_mat2 = np.copy(trans_mat1)
+        trans_mat1 += np.diag(rng.uniform(low=-1, high=1, size=ns))
+        smm1 = SemiMarkov(ns, trans_mat=trans_mat1)
+
+        n = 32
+        seq1 = smm1.sample(n)
+
+        smm2 = SemiMarkov(ns, trans_mat=trans_mat2)
+        seq2 = smm2.sample(n)
+
+        np.testing.assert_equal(seq1, seq2)
+
+    def test_offdiagonal_trans_mat_elements_are_normalized(self):
+        ns = 4
+        rng = np.random.default_rng(2)
+        trans_mat1 = rng.uniform(size=(ns, ns))
+        trans_mat1 -= np.diag(np.diag(trans_mat1))
+
+        trans_mat2 = 3.2 * trans_mat1
+
+        smm1 = SemiMarkov(ns, trans_mat=trans_mat1)
+
+        n = 27
+        seq1 = smm1.sample(n)
+
+        smm2 = SemiMarkov(ns, trans_mat=trans_mat2)
+        seq2 = smm2.sample(n)
+
+        np.testing.assert_equal(seq1, seq2)
+
+    def test_dwell_times_affect_generated_sequence(self):
+        ns = 3
+        rng = np.random.default_rng(4)
+        trans_mat = rng.uniform(size=(ns, ns))
+
+        dwell_times1 = rng.uniform(low=0, high=10, size=ns)
+        smm1 = SemiMarkov(ns, trans_mat=trans_mat, dwell_times=dwell_times1)
+
+        n = 100
+        seq1 = smm1.sample(n)
+
+        dwell_times2 = rng.uniform(low=0, high=10, size=ns)
+        smm2 = SemiMarkov(ns, trans_mat=trans_mat, dwell_times=dwell_times2)
+        seq2 = smm2.sample(n)
+
+        self.assertGreater(np.max(np.abs(seq1 - seq2)), 0)
+
+    def test_default_dwell_times_are_equal_to_one(self):
+        ns = 3
+        rng = np.random.default_rng(3)
+        trans_mat = rng.uniform(size=(ns, ns))
+
+        smm1 = SemiMarkov(ns, trans_mat=trans_mat)
+
+        n = 10
+        seq1 = smm1.sample(n)
+
+        smm2 = SemiMarkov(ns, trans_mat=trans_mat, dwell_times=1)
+        seq2 = smm2.sample(n)
+
+        np.testing.assert_equal(seq1, seq2)
 
 
 if __name__ == "__main__":
