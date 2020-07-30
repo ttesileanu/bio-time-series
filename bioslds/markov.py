@@ -1,6 +1,7 @@
 """ Define a class for simulating a type of semi-Markov model. """
 
 import numpy as np
+import scipy.optimize as sciopt
 
 from typing import Sequence, Union, Optional
 
@@ -105,8 +106,6 @@ class SemiMarkov(object):
             self.dwell_times = np.array(dwell_times)
         else:
             self.dwell_times = np.repeat(dwell_times, self.n_components)
-        # set dwell probabilities
-        self._dwell_p = 1 - 1 / self.dwell_times
 
         # set minimum and maximum dwell time
         if hasattr(min_dwell, "__len__"):
@@ -157,6 +156,9 @@ class SemiMarkov(object):
         # start by drawing initial state
         seq[0] = self.rng.choice(self.n_components, p=self.start_prob)
 
+        # calculate dwell probabilities
+        dwell_p0 = self._get_dwell_p()
+
         # sample the rest of the chain
         dwell_time = 1
         for i in range(1, len(seq)):
@@ -164,11 +166,22 @@ class SemiMarkov(object):
             state = seq[i - 1]
             crt_min_dwell = self.min_dwell[state]
             crt_max_dwell = self.max_dwell[state]
-            crt_dwell_p = self._dwell_p[state]
 
             do_switch = False
             if crt_min_dwell <= dwell_time < crt_max_dwell:
-                # switch away with fixed probability
+                # switch away with fixed probability if max_dwell is infinite
+                crt_dwell_p = dwell_p0[state]
+                if np.isfinite(crt_max_dwell):
+                    # if max_dwell is finite, we need to work more
+                    crt_dwell_left = crt_max_dwell + 1 - dwell_time
+                    if np.abs(1 - crt_dwell_p) < 1e-6:
+                        # we essentially want uniform dwell-time distribution
+                        crt_dwell_p = 1 - 1 / crt_dwell_left
+                    else:
+                        crt_dwell_p = 1 - (1 - crt_dwell_p) / (
+                            1 - crt_dwell_p ** crt_dwell_left
+                        )
+
                 do_switch = self.rng.uniform() >= crt_dwell_p
             elif dwell_time >= crt_max_dwell:
                 # we need to move away from this state
@@ -200,3 +213,47 @@ class SemiMarkov(object):
 
         sums = np.sum(self.trans_mat, axis=1)
         self.trans_mat = self.trans_mat / sums[:, None]
+
+    def _get_dwell_p(self) -> np.ndarray:
+        """ Calculate effective dwell probabilities so that the average dwell
+        times are as requested, given the constraints.
+        """
+        # this is the right answer if max_dwell is infinite
+        dwell_p = 1 - 1 / (self.dwell_times - self.min_dwell + 1)
+        for i in range(self.n_components):
+            crt_max_dwell = self.max_dwell[i]
+            if np.isfinite(crt_max_dwell):
+                crt_min_dwell = self.min_dwell[i]
+                crt_mid_dwell = (crt_min_dwell + crt_max_dwell) / 2
+                crt_avg_dwell = self.dwell_times[i]
+
+                nt = crt_max_dwell - crt_min_dwell + 1
+                crt_avg_from_mid = crt_avg_dwell - crt_mid_dwell
+
+                flip_p = False
+                if np.abs(crt_avg_from_mid) < 1e-6:
+                    crt_p = 1.0
+                else:
+                    if crt_avg_from_mid > 0:
+                        flip_p = True
+                        crt_avg_from_mid *= -1
+
+                    def obj_from_mid(p: float) -> float:
+                        if p == 1:
+                            exp_from_mid = 0
+                        else:
+                            pnt = p ** nt
+                            exp_from_mid = 0.5 * (
+                                (1 + p) / (1 - p) - nt * (1 + pnt) / (1 - pnt)
+                            )
+
+                        return exp_from_mid - crt_avg_from_mid
+
+                    crt_p = sciopt.brentq(obj_from_mid, 0, 1)
+
+                if flip_p:
+                    crt_p = 1 / crt_p
+
+                dwell_p[i] = crt_p
+
+        return dwell_p

@@ -243,7 +243,7 @@ class TestSemiMarkovDwellTimeConstraintsObeyed(unittest.TestCase):
             )
 
     def test_dwell_times_reach_maximum_but_do_not_go_above(self):
-        seq = self.smm.sample(300)
+        seq = self.smm.sample(2000)
         seq_rle = self.to_rle(seq)
 
         for i in range(self.n_components):
@@ -325,6 +325,16 @@ class TestSemiMarkovTransMatHandling(unittest.TestCase):
         seq2 = smm2.sample(n)
 
         np.testing.assert_equal(seq1, seq2)
+
+
+class TestSemiMarkovInitRaisesOnInvalidDwellTimes(unittest.TestCase):
+    def test_raises_value_error_if_dwell_times_not_above_dwell_min(self):
+        with self.assertRaises(ValueError):
+            SemiMarkov(2, dwell_times=[100, 10], min_dwell=20)
+
+    def test_raises_value_error_if_dwell_times_not_below_dwell_max(self):
+        with self.assertRaises(ValueError):
+            SemiMarkov(2, dwell_times=[100, 10], max_dwell=20)
 
 
 if __name__ == "__main__":
