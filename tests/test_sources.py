@@ -185,6 +185,16 @@ class TestSourcesGaussianNoise(unittest.TestCase):
 
         np.testing.assert_allclose(y1, y2)
 
+    def test_default_seed_is_zero(self):
+        src1 = sources.GaussianNoise()
+        src2 = sources.GaussianNoise(0)
+
+        n = 13
+        y1 = src1(size=n)
+        y2 = src2(size=n)
+
+        np.testing.assert_allclose(y1, y2)
+
 
 class TestSourcesGaussianNoiseStrAndRepr(unittest.TestCase):
     def setUp(self):

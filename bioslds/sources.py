@@ -84,7 +84,7 @@ class GaussianNoise(object):
 
     def __init__(
         self,
-        rng: Union[int, np.random.Generator, np.random.RandomState],
+        rng: Union[int, np.random.Generator, np.random.RandomState] = 0,
         loc: float = 0,
         scale: float = 1,
     ):
