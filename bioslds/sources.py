@@ -29,6 +29,9 @@ class Constant(object):
         """
         return np.repeat(self.value, size)
 
+    def __repr__(self) -> str:
+        return f"Constant({self.value})"
+
 
 class Stream(object):
     """ A source that streams data from an array.
@@ -61,6 +64,9 @@ class Stream(object):
         data = self.data_store[self.ptr_ : self.ptr_ + size]
         self.ptr_ += size
         return data
+
+    def __repr__(self) -> str:
+        return f"Stream(data_store={self.data_store}, ptr_={self.ptr_})"
 
 
 class GaussianNoise(object):
@@ -110,6 +116,16 @@ class GaussianNoise(object):
             Number of values to return.
         """
         return self.rng.normal(self.loc, self.scale, size=size)
+
+    def __str__(self) -> str:
+        return f"GaussianNoise(loc={self.loc}, scale={self.scale})"
+
+    def __repr__(self) -> str:
+        r = (
+            f"GaussianNoise(loc={self.loc}, scale={self.scale}, "
+            + f"rng={self.rng})"
+        )
+        return r
 
 
 def fix_source_scale(

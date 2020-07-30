@@ -23,6 +23,24 @@ class TestSourcesConstant(unittest.TestCase):
         self.assertEqual(len(y), n)
 
 
+class TestSourcesConstantStrAndRepr(unittest.TestCase):
+    def setUp(self):
+        self.x = 3.2
+        self.src = sources.Constant(self.x)
+
+    def test_str(self):
+        s = str(self.src)
+        s_exp = f"Constant({str(self.x)})"
+
+        self.assertEqual(s, s_exp)
+
+    def test_repr(self):
+        r = repr(self.src)
+        r_exp = f"Constant({repr(self.x)})"
+
+        self.assertEqual(r, r_exp)
+
+
 class TestSourcesStreamBasic(unittest.TestCase):
     def test_empty_result_if_zero_samples_requested_from_empty_store(self):
         src = sources.Stream([])
@@ -65,6 +83,26 @@ class TestSourcesStream(unittest.TestCase):
     def test_requesting_too_many_items_raises_index_error(self):
         with self.assertRaises(IndexError):
             self.src(size=self.n + 1)
+
+
+class TestSourcesStreamStrAndRepr(unittest.TestCase):
+    def setUp(self):
+        rng = np.random.default_rng(2)
+        self.n = 10
+        self.data = rng.normal(size=self.n)
+        self.src = sources.Stream(self.data)
+
+    def test_str(self):
+        s = str(self.src)
+        s_exp = f"Stream(data_store={str(self.data)}, ptr_=0)"
+
+        self.assertEqual(s, s_exp)
+
+    def test_repr(self):
+        r = repr(self.src)
+        r_exp = f"Stream(data_store={str(self.data)}, ptr_=0)"
+
+        self.assertEqual(r, r_exp)
 
 
 class TestSourcesGaussianNoise(unittest.TestCase):
@@ -146,6 +184,31 @@ class TestSourcesGaussianNoise(unittest.TestCase):
         y2 = src2(size=n)
 
         np.testing.assert_allclose(y1, y2)
+
+
+class TestSourcesGaussianNoiseStrAndRepr(unittest.TestCase):
+    def setUp(self):
+        self.rng = np.random.default_rng(1)
+        self.loc = -0.5
+        self.scale = 2.3
+        self.src = sources.GaussianNoise(
+            self.rng, loc=self.loc, scale=self.scale
+        )
+
+    def test_str(self):
+        s = str(self.src)
+        s_exp = f"GaussianNoise(loc={self.loc}, scale={self.scale})"
+
+        self.assertEqual(s, s_exp)
+
+    def test_repr(self):
+        r = repr(self.src)
+        r_exp = (
+            f"GaussianNoise(loc={self.loc}, scale={self.scale}, "
+            + f"rng={self.rng})"
+        )
+
+        self.assertEqual(r, r_exp)
 
 
 class TestSourcesFixSourceScale(unittest.TestCase):
