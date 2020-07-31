@@ -274,3 +274,5 @@ class SemiMarkov(object):
              f"max_dwell={repr(self.max_dwell)}, " +
              f"rng={repr(self.rng)})")
         return r
+
+    _available_modes = ["naive"]
