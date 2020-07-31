@@ -3,6 +3,7 @@
 import numpy as np
 import scipy.optimize as sciopt
 
+from numba import njit
 from typing import Sequence, Union, Optional
 
 
@@ -131,7 +132,7 @@ class SemiMarkov(object):
 
         # _mode allows us to choose legacy implementations
         # useful for testing
-        self._mode = "naive"
+        self._mode = "numba"
 
     def sample(self, n: int) -> np.ndarray:
         """ Generate samples from the model.
@@ -159,6 +160,16 @@ class SemiMarkov(object):
         # calculate dwell probabilities
         dwell_p0 = self._get_dwell_p()
 
+        # choose one of the calculation modes
+        fct_mapping = {"naive": self._sample_naive, "numba": self._sample_numba}
+        fct = fct_mapping[self._mode]
+
+        # noinspection PyArgumentList
+        fct(seq, dwell_p0)
+
+        return seq
+
+    def _sample_naive(self, seq: np.ndarray, dwell_p0: np.ndarray):
         # sample the rest of the chain
         dwell_time = 1
         for i in range(1, len(seq)):
@@ -199,7 +210,15 @@ class SemiMarkov(object):
                 seq[i] = seq[i - 1]
                 dwell_time += 1
 
-        return seq
+    def _sample_numba(self, seq: np.ndarray, dwell_p0: np.ndarray):
+        cum_trans_mat = np.cumsum(self.trans_mat, axis=1)
+        min_dwell = self.min_dwell
+        max_dwell = self.max_dwell
+        randomness = self.rng.uniform(size=len(seq))
+
+        _sample_semi_markov_numba(
+            seq, cum_trans_mat, min_dwell, max_dwell, dwell_p0, randomness
+        )
 
     def _adjust_trans_mat(self):
         """ Adjust trans_mat by zero-ing the diagonal and normalizing each
@@ -259,20 +278,76 @@ class SemiMarkov(object):
         return dwell_p
 
     def __str__(self) -> str:
-        s = (f"SemiMarkov(start_prob={str(self.start_prob)}, " +
-             f"trans_mat={str(self.trans_mat)}, " +
-             f"dwell_times={str(self.dwell_times)}, " +
-             f"min_dwell={str(self.min_dwell)}, " +
-             f"max_dwell={str(self.max_dwell)})")
+        s = (
+            f"SemiMarkov(start_prob={str(self.start_prob)}, "
+            + f"trans_mat={str(self.trans_mat)}, "
+            + f"dwell_times={str(self.dwell_times)}, "
+            + f"min_dwell={str(self.min_dwell)}, "
+            + f"max_dwell={str(self.max_dwell)})"
+        )
         return s
 
     def __repr__(self) -> str:
-        r = (f"SemiMarkov(start_prob={repr(self.start_prob)}, " +
-             f"trans_mat={repr(self.trans_mat)}, " +
-             f"dwell_times={repr(self.dwell_times)}, " +
-             f"min_dwell={repr(self.min_dwell)}, " +
-             f"max_dwell={repr(self.max_dwell)}, " +
-             f"rng={repr(self.rng)})")
+        r = (
+            f"SemiMarkov(start_prob={repr(self.start_prob)}, "
+            + f"trans_mat={repr(self.trans_mat)}, "
+            + f"dwell_times={repr(self.dwell_times)}, "
+            + f"min_dwell={repr(self.min_dwell)}, "
+            + f"max_dwell={repr(self.max_dwell)}, "
+            + f"rng={repr(self.rng)})"
+        )
         return r
 
-    _available_modes = ["naive"]
+    _available_modes = ["naive", "numba"]
+
+
+@njit
+def _sample_semi_markov_numba(
+    seq: np.ndarray,
+    cum_trans_mat: np.ndarray,
+    min_dwell: Sequence,
+    max_dwell: Sequence,
+    dwell_p0: np.ndarray,
+    randomness: np.ndarray,
+):
+    dwell_time = 1
+    n = len(seq)
+    for i in range(1, n):
+        # first decide whether to switch or not
+        state = seq[i - 1]
+        crt_min_dwell = min_dwell[state]
+        crt_max_dwell = max_dwell[state]
+
+        do_switch = False
+        crt_rnd = randomness[i]
+        if crt_min_dwell <= dwell_time < crt_max_dwell:
+            # switch away with fixed probability if max_dwell is infinite
+            crt_dwell_p = dwell_p0[state]
+            if np.isfinite(crt_max_dwell):
+                # if max_dwell is finite, we need to work more
+                crt_dwell_left = crt_max_dwell + 1 - dwell_time
+                if np.abs(1 - crt_dwell_p) < 1e-6:
+                    # we essentially want uniform dwell-time distribution
+                    crt_dwell_p = 1 - 1 / crt_dwell_left
+                else:
+                    crt_dwell_p = 1 - (1 - crt_dwell_p) / (
+                        1 - crt_dwell_p ** crt_dwell_left
+                    )
+
+            do_switch = crt_rnd >= crt_dwell_p
+            if do_switch:
+                crt_rnd = (crt_rnd - crt_dwell_p) / (1 - crt_dwell_p)
+        elif dwell_time >= crt_max_dwell:
+            # we need to move away from this state
+            do_switch = True
+
+        if do_switch:
+            # switch and reset dwell counter
+            # note that this switches because self._adjust_trans_mat made
+            # sure to zero the diagonal of self.trans_mat
+
+            seq[i] = (cum_trans_mat[state] >= crt_rnd).nonzero()[0][0]
+            dwell_time = 1
+        else:
+            seq[i] = seq[i - 1]
+            dwell_time += 1
