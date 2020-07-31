@@ -2,7 +2,8 @@ import unittest
 
 import numpy as np
 
-from bioslds.arma_hsmm import sample_switching_models
+from bioslds.arma_hsmm import sample_switching_models, ArmaHSMM
+from bioslds.markov import SemiMarkov
 from bioslds.arma import Arma
 from bioslds import sources
 
@@ -217,6 +218,105 @@ class TestSampleSwitchingModelsU(unittest.TestCase):
         )
 
         np.testing.assert_allclose(U_exp, U_ret)
+
+
+class TestArmaHSMM(unittest.TestCase):
+    def setUp(self):
+        self.arma1 = Arma([0.9], [], default_source=sources.GaussianNoise())
+        self.arma2 = Arma(
+            [0.2, -0.1], [0.3], default_source=sources.GaussianNoise()
+        )
+
+        self.armas = [self.arma1, self.arma2]
+
+    def test_transform_returns_triple(self):
+        arma_hsmm = ArmaHSMM(self.armas)
+        res = arma_hsmm.transform(100)
+
+        self.assertEqual(len(res), 3)
+
+    def test_transform_second_return_value_is_copy_of_input(self):
+        arma_hsmm = ArmaHSMM(self.armas)
+
+        rng = np.random.default_rng(2)
+        n = 23
+
+        u = rng.normal(size=n)
+        _, u_ret, _ = arma_hsmm.transform(U=u)
+
+        np.testing.assert_allclose(u, u_ret)
+
+    def test_transform_third_return_value_is_usage_seq_from_semi_markov(self):
+        arma_hsmm = ArmaHSMM(self.armas)
+
+        n = 15
+        _, _, usage_seq = arma_hsmm.transform(n)
+
+        smm = SemiMarkov(2)
+        usage_seq_exp = smm.sample(n)
+
+        np.testing.assert_allclose(usage_seq, usage_seq_exp)
+
+    def test_transform_first_return_value_matches_sample_switching_models(self):
+        arma_hsmm = ArmaHSMM(self.armas)
+
+        n = 15
+        y, u, usage_seq = arma_hsmm.transform(n)
+
+        y_exp, _ = sample_switching_models(self.armas, usage_seq, U=u)
+
+        np.testing.assert_allclose(y, y_exp)
+
+    def test_additional_init_kwargs_passed_to_semi_markov(self):
+        kwargs = dict(max_dwell=20, rng=5)
+        arma_hsmm = ArmaHSMM(self.armas, **kwargs)
+
+        n = 15
+        _, _, usage_seq = arma_hsmm.transform(n)
+
+        smm = SemiMarkov(2, **kwargs)
+        usage_seq_exp = smm.sample(n)
+
+        np.testing.assert_allclose(usage_seq, usage_seq_exp)
+
+    def test_initial_conditions_obeyed(self):
+        arma_hsmm = ArmaHSMM(self.armas)
+
+        n = 15
+        ic = ([-0.3, 0.2, 0.8], [0.5, 0.7, 0.1])
+        y, u, usage_seq = arma_hsmm.transform(n, initial_conditions=ic)
+
+        y_exp, _ = sample_switching_models(
+            self.armas, usage_seq, U=u, initial_conditions=ic
+        )
+
+        np.testing.assert_allclose(y, y_exp)
+
+
+class TestArmaHSMMStrAndRepr(unittest.TestCase):
+    def setUp(self):
+        self.arma1 = Arma([0.9], [], default_source=sources.GaussianNoise())
+        self.arma2 = Arma(
+            [0.2, -0.1], [0.3], default_source=sources.GaussianNoise()
+        )
+        self.armas = [self.arma1, self.arma2]
+        self.arma_hsmm = ArmaHSMM(self.armas, min_dwell=3, dwell_times=5)
+
+    def test_str(self):
+        s = str(self.arma_hsmm)
+        s_exp = "ArmaHSMM(models={}, smm={})".format(
+            str(self.armas), str(self.arma_hsmm.smm),
+        )
+
+        self.assertEqual(s, s_exp)
+
+    def test_repr(self):
+        r = repr(self.arma_hsmm)
+        r_exp = "ArmaHSMM(models={}, smm={})".format(
+            repr(self.armas), repr(self.arma_hsmm.smm),
+        )
+
+        self.assertEqual(r, r_exp)
 
 
 if __name__ == "__main__":
