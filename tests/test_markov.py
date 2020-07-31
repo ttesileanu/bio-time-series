@@ -337,7 +337,7 @@ class TestSemiMarkovInitRaisesOnInvalidDwellTimes(unittest.TestCase):
             SemiMarkov(2, dwell_times=[100, 10], max_dwell=20)
 
 
-class TestArmaStrAndRepr(unittest.TestCase):
+class TestSemiMarkovStrAndRepr(unittest.TestCase):
     def setUp(self):
         self.n_components = 3
         self.start_prob = np.asarray([0.2, 0.5, 0.3])
