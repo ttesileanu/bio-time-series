@@ -1,5 +1,2 @@
-* Implement ArmaHSMM
-  * hidden semi-Markov model
-    - allow state durations to be drawn from non-trivial distributions
-      - most importantly for us: lower bound on the time in each state
-  * also allow for a timeline provided by the user
+* biologically plausible winner-take-all algorithm: BioWTARegressor
+  * argmax (a) by hand; (b) neural dynamics till convergence; (c) neural dynamics for fixed number of steps
