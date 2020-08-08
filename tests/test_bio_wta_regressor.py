@@ -2,6 +2,7 @@ import unittest
 
 import numpy as np
 
+from unittest import mock
 from bioslds.regressors import BioWTARegressor
 
 
@@ -155,6 +156,39 @@ class TestBioWTARegressorFitInferDefaultInit(unittest.TestCase):
         dw_exp = self.wta.rate_weights * self.predictors[0] * eps_k
 
         np.testing.assert_allclose(dw, dw_exp)
+
+    def test_progress_called(self):
+        mock_progress = mock.MagicMock()
+
+        self.wta.fit_infer(self.predictors, self.dependent, progress=mock_progress)
+
+        mock_progress.assert_called()
+
+
+class TestBioWTARegressorStrAndRepr(unittest.TestCase):
+    def setUp(self):
+        self.n_models = 4
+        self.n_features = 5
+        self.wta = BioWTARegressor(self.n_models, self.n_features)
+
+    def test_str(self):
+        s = str(self.wta)
+        s_exp = (
+            f"BioWTARegressor(n_models={self.n_models}, n_features="
+            f"{self.n_features})"
+        )
+
+        self.assertEqual(s, s_exp)
+
+    def test_repr(self):
+        s = repr(self.wta)
+        s_exp = (
+            f"BioWTARegressor(n_models={self.n_models}, n_features="
+            f"{self.n_features}, rate_weights={self.wta.rate_weights}, weights_="
+            f"{repr(self.wta.weights_)})"
+        )
+
+        self.assertEqual(s, s_exp)
 
 
 if __name__ == "__main__":
