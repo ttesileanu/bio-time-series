@@ -157,6 +157,27 @@ class TestBioWTARegressorFitInferDefaultInit(unittest.TestCase):
 
         np.testing.assert_allclose(dw, dw_exp)
 
+    def test_history(self):
+        _, history = self.wta.fit_infer(
+            self.predictors, self.dependent, return_history=True
+        )
+
+        wta_again = BioWTARegressor(self.n_models, self.n_features)
+        weights = []
+        predictions = []
+        for crt_x, crt_y in zip(self.predictors, self.dependent):
+            weights.append(np.copy(wta_again.weights_))
+
+            crt_all_pred = np.dot(wta_again.weights_, crt_x)
+            crt_r = wta_again.fit_infer([crt_x], [crt_y])
+            crt_k = np.argmax(crt_r)
+
+            crt_pred = crt_all_pred[crt_k]
+            predictions.append(crt_pred)
+
+        np.testing.assert_allclose(weights, history.weights)
+        np.testing.assert_allclose(predictions, history.predictions)
+
     def test_progress_called(self):
         mock_progress = mock.MagicMock()
 
