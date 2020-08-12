@@ -2,7 +2,7 @@ import unittest
 
 import numpy as np
 
-from bioslds.utils import rle_encode, rle_decode
+from bioslds.utils import rle_encode, rle_decode, to_hankel
 
 
 class TestRleEncode(unittest.TestCase):
@@ -66,6 +66,38 @@ class TestRleRoundtrip(unittest.TestCase):
         seq = rle_decode(seq_rle)
 
         self.assertEqual(rle_encode(seq), seq_rle)
+
+
+class TestToHankel(unittest.TestCase):
+    def test_returns_empty_for_empty_y(self):
+        H = to_hankel([], 3)
+        self.assertEqual(np.size(H), 0)
+
+    def test_returns_empty_if_p_smaller_than_one(self):
+        H = to_hankel([1, 2, 3], 0)
+        self.assertEqual(np.size(H), 0)
+
+    def test_output_has_len_y_rows(self):
+        y = [1, 0, 1, 2, 3, 4, 2, 3, 0.5]
+        p = 3
+        H = to_hankel(y, p)
+
+        self.assertEqual(len(H), len(y))
+
+    def test_output_matches_hankel_definition(self):
+        rng = np.random.default_rng(0)
+
+        n = 50
+        p = 4
+        y = rng.normal(size=n)
+        H = to_hankel(y, p)
+
+        for i in range(n - p):
+            for j in range(p):
+                if i >= j:
+                    self.assertAlmostEqual(H[i, j], y[i - j])
+                else:
+                    self.assertEqual(H[i, j], 0)
 
 
 if __name__ == "__main__":
