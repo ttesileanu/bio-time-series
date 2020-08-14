@@ -212,5 +212,145 @@ class TestBioWTARegressorStrAndRepr(unittest.TestCase):
         self.assertEqual(s, s_exp)
 
 
+class TestBioWTARegressorLatentPrior(unittest.TestCase):
+    def setUp(self):
+        self.n_models = 3
+        self.n_features = 4
+        self.wta = BioWTARegressor(self.n_models, self.n_features)
+
+        self.rng = np.random.default_rng(10)
+        self.n_samples = 79
+        self.predictors = self.rng.normal(size=(self.n_samples, self.n_features))
+        self.dependent = self.rng.normal(size=self.n_samples)
+
+    def test_default_initial_latent_state_distribution_is_uniform(self):
+        wta2 = BioWTARegressor(
+            self.n_models,
+            self.n_features,
+            start_prob=np.ones(self.n_models) / self.n_models,
+        )
+
+        r1 = self.wta.fit_infer(self.predictors, self.dependent)
+        r2 = wta2.fit_infer(self.predictors, self.dependent)
+
+        np.testing.assert_allclose(r1, r2)
+
+    def test_default_latent_state_transition_matrix_is_uniform(self):
+        wta2 = BioWTARegressor(
+            self.n_models,
+            self.n_features,
+            trans_mat=np.ones((self.n_models, self.n_models)) / self.n_models,
+        )
+
+        r1 = self.wta.fit_infer(self.predictors, self.dependent)
+        r2 = wta2.fit_infer(self.predictors, self.dependent)
+
+        np.testing.assert_allclose(r1, r2)
+
+    def test_changing_initial_latent_state_distribution_changes_output(self):
+        start_prob = (lambda v: v / np.sum(v))(self.rng.uniform(size=self.n_models))
+        wta2 = BioWTARegressor(self.n_models, self.n_features, start_prob=start_prob)
+
+        r1 = self.wta.fit_infer(self.predictors, self.dependent)
+        r2 = wta2.fit_infer(self.predictors, self.dependent)
+
+        self.assertGreater(np.max(np.abs(r1 - r2)), 1e-3)
+
+    def test_changing_latent_state_transition_matrix_changes_output(self):
+        trans_mat = [
+            (lambda v: v / np.sum(v))(self.rng.uniform(size=self.n_models))
+            for _ in range(self.n_models)
+        ]
+        wta2 = BioWTARegressor(self.n_models, self.n_features, trans_mat=trans_mat)
+
+        r1 = self.wta.fit_infer(self.predictors, self.dependent)
+        r2 = wta2.fit_infer(self.predictors, self.dependent)
+
+        self.assertGreater(np.max(np.abs(r1 - r2)), 1e-3)
+
+    def test_when_start_prob_large_for_a_state_then_that_state_gets_high_r(self):
+        r1 = self.wta.fit_infer(self.predictors[[0]], self.dependent[[0]])
+        k1 = np.argmax(r1[0])
+
+        # make another state win out
+        k = 0 if k1 != 0 else 1
+        p_large = 0.999
+        start_prob = (1 - p_large) * np.ones(self.n_models) / (self.n_models - 1)
+        start_prob[k] = p_large
+        wta2 = BioWTARegressor(self.n_models, self.n_features, start_prob=start_prob)
+
+        r2 = wta2.fit_infer(self.predictors[[0]], self.dependent[[0]])
+        k2 = np.argmax(r2[0])
+
+        self.assertNotEqual(k1, k2)
+        self.assertEqual(k2, k)
+
+    def test_when_trans_mat_large_for_a_target_state_then_that_state_gets_high_r(self):
+        # first figure out where we're starting
+        r1 = self.wta.fit_infer(self.predictors[:2], self.dependent[:2])
+        k1_start = np.argmax(r1[0])
+        k1 = np.argmax(r1[1])
+
+        # make another state win out
+        k = 0 if k1 != 0 else 1
+        p0 = 0.999
+        trans_mat = np.ones((self.n_models, self.n_models)) / self.n_models
+        trans_mat[k1_start, :] = (1 - p0) * np.ones(self.n_models) / (self.n_models - 1)
+        trans_mat[k1_start, k] = p0
+        wta2 = BioWTARegressor(self.n_models, self.n_features, trans_mat=trans_mat)
+
+        r2 = wta2.fit_infer(self.predictors[:2], self.dependent[:2])
+        k2_start = np.argmax(r2[0])
+        k2 = np.argmax(r2[1])
+
+        self.assertEqual(k1_start, k2_start)
+
+        self.assertNotEqual(k1, k2)
+        self.assertEqual(k2, k)
+
+    def test_initial_r_value_changes_by_correct_amount_according_to_start_prob(self):
+        r1 = self.wta.fit_infer(self.predictors[[0]], self.dependent[[0]])
+
+        # change initial state distribution
+        start_prob = (lambda v: v / np.sum(v))(self.rng.uniform(size=self.n_models))
+        wta2 = BioWTARegressor(self.n_models, self.n_features, start_prob=start_prob)
+
+        r2 = wta2.fit_infer(self.predictors[[0]], self.dependent[[0]])
+
+        diff_log_r = np.log(r2[0]) - np.log(r1[0])
+        np.testing.assert_allclose(
+            diff_log_r - diff_log_r[0], np.log(start_prob) - np.log(start_prob[0]),
+        )
+
+    def test_second_r_value_changes_by_correct_amount_according_to_trans_mat(self):
+        r1 = self.wta.fit_infer(self.predictors[:2], self.dependent[:2])
+
+        # change transition matrix
+        trans_mat = [
+            (lambda v: v / np.sum(v))(self.rng.uniform(size=self.n_models))
+            for _ in range(self.n_models)
+        ]
+        wta2 = BioWTARegressor(self.n_models, self.n_features, trans_mat=trans_mat)
+
+        r2 = wta2.fit_infer(self.predictors[:2], self.dependent[:2])
+        np.testing.assert_allclose(r1[0], r2[0])
+
+        diff_log_r = np.log(r2[1]) - np.log(r1[1])
+        expected_diff_log_r = r2[0] @ np.log(trans_mat)
+        np.testing.assert_allclose(
+            diff_log_r - diff_log_r[0], expected_diff_log_r - expected_diff_log_r[0]
+        )
+
+    def test_float_trans_mat(self):
+        r1 = self.wta.fit_infer(self.predictors, self.dependent)
+
+        wta2 = BioWTARegressor(
+            self.n_models, self.n_features, trans_mat=1 / self.n_models
+        )
+        r2 = wta2.fit_infer(self.predictors, self.dependent)
+
+        np.testing.assert_allclose(r1, r2)
+
+
 if __name__ == "__main__":
     unittest.main()

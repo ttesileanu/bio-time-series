@@ -34,6 +34,13 @@ class BioWTARegressor(object):
         Learning rate for the regression weights.
     weights_ : array, shape `(n_models, n_features)`
         Regression weights for each of the models.
+    start_prob_ : array of float, shape (n_models, )
+        Distribution for the initial latent state. Currently this is fixed and cannot be
+        learned.
+    trans_mat_ : array of float, shape (n_models, n_models)
+        Transition matrix for the latent state, with `trans_mat[i, j]` being the
+        probability of transitioning from latent state (model) `i` to latent state
+        (model) `j` at every time step. Currently this is fixed and cannot be learned.
     """
 
     def __init__(
@@ -43,6 +50,8 @@ class BioWTARegressor(object):
         rate_weights: float = 1e-3,
         rng: Union[int, np.random.RandomState, np.random.Generator] = 0,
         weights: Optional[Sequence] = None,
+        start_prob: Optional[Sequence] = None,
+        trans_mat: Optional[Union[float, Sequence]] = None,
     ):
         """ Initialize the regression model.
 
@@ -60,6 +69,17 @@ class BioWTARegressor(object):
             `np.random.default_rng`. If not provided, a seed of 0 is used.
         weights
             Initial value for the weights. This overrides `rng`.
+        start_prob
+            Distribution for the initial latent state. If not provided, this is set to
+            uniform. Currently this distribution is fixed and cannot be learned.
+        trans_mat
+            Transition matrix for the latent state, with `trans_mat[i, j]` being the
+            probability of transitioning from latent state (model) `i` to latent state
+            (model) `j` at every time step. If this is a scalar, it gives the diagonal
+            element (i.e., the probability of staying in the same state), and all other
+            elements are set equal (i.e., uniform probability to transition to each of
+            the other states). Currently the transition matrix is fixed and cannot be
+            learned.
         """
         self.n_models = n_models
         self.n_features = n_features
@@ -74,6 +94,26 @@ class BioWTARegressor(object):
             self.weights_ = rng.normal(size=(self.n_models, self.n_features))
         else:
             self.weights_ = np.copy(weights)
+
+        if start_prob is not None:
+            self.start_prob_ = np.copy(start_prob)
+        else:
+            self.start_prob_ = np.ones(self.n_models) / self.n_models
+
+        if trans_mat is not None:
+            if np.size(trans_mat) > 1:
+                self.trans_mat_ = np.copy(trans_mat)
+            else:
+                if self.n_models == 1:
+                    self.trans_mat_ = np.ones((self.n_models, self.n_models))
+                else:
+                    p_diag = trans_mat
+                    p_offdiag = (1 - trans_mat) / (self.n_models - 1)
+                    self.trans_mat_ = p_offdiag * np.ones(
+                        (self.n_models, self.n_models)
+                    ) + (p_diag - p_offdiag) * np.eye(self.n_models)
+        else:
+            self.trans_mat_ = np.ones((self.n_models, self.n_models)) / self.n_models
 
     def fit_infer(
         self,
@@ -132,12 +172,19 @@ class BioWTARegressor(object):
             weights = None
             predictions = None
 
+        log_trans_mat = np.log(self.trans_mat_)
         for i, (crt_x, crt_y) in enumerate(zip(itX, y)):
             crt_pred = np.dot(self.weights_, crt_x)
             crt_eps = crt_y - crt_pred
 
-            # find best-fitting model
-            crt_obj = -0.5 * crt_eps ** 2
+            # find best-fitting model:
+            # start with prior on latent states
+            if i == 0:
+                crt_obj = np.log(self.start_prob_)
+            else:
+                crt_obj = r[i - 1] @ log_trans_mat
+
+            crt_obj -= 0.5 * crt_eps ** 2
             max_obj = np.max(crt_obj)
             r0 = np.exp(crt_obj - max_obj)
             r[i] = r0 / np.sum(r0)
