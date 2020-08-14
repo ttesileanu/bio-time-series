@@ -1,2 +1,6 @@
-* biologically plausible winner-take-all algorithm: BioWTARegressor
-  * argmax (a) by hand; (b) neural dynamics till convergence; (c) neural dynamics for fixed number of steps
+* BioWTARegressor
+  * add other ways of calculating argmax
+    (a) neural dynamics till convergence
+    (b) neural dynamics for fixed number of steps
+  * add speed benchmark
+  * try Numba version of fit_infer, see if speed improvements are worth it
