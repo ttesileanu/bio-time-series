@@ -214,7 +214,8 @@ class Arma(object):
         u = np.convolve(u_out_full, b_ext, mode="valid")
 
         if self.p > 0:
-            _perform_ar(y_out_full, u, np.flip(self.a), self.p, self.bias)
+            # flip doesn't create a copy by default, which can slow Numba!
+            _perform_ar(y_out_full, u, np.copy(self.a[::-1]), self.p, self.bias)
         else:
             y_out_full[self.p :] = u + self.bias
 
@@ -228,7 +229,7 @@ class Arma(object):
             u = u_out_full
 
         if self.p > 0:
-            _perform_ar(y_out_full, u, np.flip(self.a), self.p, self.bias)
+            _perform_ar(y_out_full, u, np.copy(self.a[::-1]), self.p, self.bias)
         else:
             y_out_full[self.p :] = u + self.bias
 
@@ -444,7 +445,7 @@ def _generate_random_poly(
     coeffs = coeffs.real
 
     # ensure that the coefficients are ordered in the proper way
-    coeffs = np.flip(coeffs)
+    coeffs = np.copy(coeffs[::-1])
 
     return coeffs
 
