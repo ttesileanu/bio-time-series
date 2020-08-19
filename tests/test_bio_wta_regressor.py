@@ -1,6 +1,7 @@
 import unittest
 
 import numpy as np
+import warnings
 
 from unittest import mock
 from bioslds.regressors import BioWTARegressor
@@ -350,6 +351,90 @@ class TestBioWTARegressorLatentPrior(unittest.TestCase):
         r2 = wta2.fit_infer(self.predictors, self.dependent)
 
         np.testing.assert_allclose(r1, r2)
+
+
+class TestBioWTARegressorDegenerateStartProbOrTransMat(unittest.TestCase):
+    def setUp(self):
+        self.n_models = 4
+        self.n_features = 3
+
+        self.rng = np.random.default_rng(31)
+        self.n_samples = 79
+        self.predictors = self.rng.normal(size=(self.n_samples, self.n_features))
+        self.dependent = self.rng.normal(size=self.n_samples)
+
+    def test_state_with_zero_start_prob_is_not_used_at_first_step(self):
+        # first find the most likely state with uniform start_prob
+        wta1 = BioWTARegressor(self.n_models, self.n_features)
+        r1 = wta1.fit_infer(self.predictors, self.dependent)
+        k0 = np.argmax(r1[0])
+
+        # next disallow the system from starting in that state
+        start_prob = np.ones(self.n_models) / (self.n_models - 1)
+        # we never start in state k0
+        start_prob[k0] = 0
+
+        wta2 = BioWTARegressor(self.n_models, self.n_features, start_prob=start_prob)
+        r2 = wta2.fit_infer(self.predictors, self.dependent)
+
+        self.assertLess(r2[0, k0], 1e-6)
+
+    def test_no_warning_when_some_start_prob_are_zero(self):
+        start_prob = np.ones(self.n_models) / (self.n_models - 2)
+
+        start_prob[[0, 2]] = 0
+        wta = BioWTARegressor(self.n_models, self.n_features, start_prob=start_prob)
+
+        with warnings.catch_warnings(record=True) as warn_list:
+            # ensure warnings haven't been disabled
+            warnings.simplefilter("always")
+            wta.fit_infer(self.predictors, self.dependent)
+
+            # ensure no warnings have been triggered
+            self.assertEqual(len(warn_list), 0)
+
+    def test_transition_with_zero_trans_mat_is_never_used(self):
+        # first find most likely transition with uniform trans_mat
+        wta1 = BioWTARegressor(self.n_models, self.n_features)
+        r1 = wta1.fit_infer(self.predictors, self.dependent)
+        k1 = np.argmax(r1, axis=1)
+
+        trans_count1 = np.zeros((self.n_models, self.n_models), dtype=int)
+        for ki, kf in zip(k1, k1[1:]):
+            trans_count1[ki, kf] += 1
+
+        kmli, kmlf = np.unravel_index(trans_count1.argmax(), trans_count1.shape)
+        self.assertGreater(trans_count1[kmli, kmlf], 0)
+
+        # next disallow the system performing that transition
+        trans_mat = np.ones((self.n_models, self.n_models)) / self.n_models
+        trans_mat[kmli] = np.ones(self.n_models) / (self.n_models - 1)
+        trans_mat[kmli, kmlf] = 0
+
+        wta2 = BioWTARegressor(self.n_models, self.n_features, trans_mat=trans_mat)
+        r2 = wta2.fit_infer(self.predictors, self.dependent)
+        k2 = np.argmax(r2, axis=1)
+
+        trans_count2 = np.zeros((self.n_models, self.n_models), dtype=int)
+        for ki, kf in zip(k2, k2[1:]):
+            trans_count2[ki, kf] += 1
+
+        self.assertEqual(trans_count2[kmli, kmlf], 0)
+
+    def test_no_warning_when_some_trans_mat_are_zero(self):
+        # disallow the system from performing some transition
+        trans_mat = np.ones((self.n_models, self.n_models)) / self.n_models
+        trans_mat[0] = np.ones(self.n_models) / (self.n_models - 1)
+        trans_mat[0, 1] = 0
+        wta = BioWTARegressor(self.n_models, self.n_features, trans_mat=trans_mat)
+
+        with warnings.catch_warnings(record=True) as warn_list:
+            # ensure warnings haven't been disabled
+            warnings.simplefilter("always")
+            wta.fit_infer(self.predictors, self.dependent)
+
+            # ensure no warnings have been triggered
+            self.assertEqual(len(warn_list), 0)
 
 
 if __name__ == "__main__":

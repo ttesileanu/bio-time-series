@@ -113,7 +113,9 @@ class BioWTARegressor(object):
                         (self.n_models, self.n_models)
                     ) + (p_diag - p_offdiag) * np.eye(self.n_models)
         else:
-            self.trans_mat_ = np.ones((self.n_models, self.n_models)) / self.n_models
+            self.trans_mat_ = (
+                np.ones((self.n_models, self.n_models)) / self.n_models
+            )
 
     def fit_infer(
         self,
@@ -150,7 +152,9 @@ class BioWTARegressor(object):
         """
         n_samples, n_features = np.shape(X)
         if n_features != self.n_features:
-            raise ValueError("Number of columns in X should be equal to n_features.")
+            raise ValueError(
+                "Number of columns in X should be equal to n_features."
+            )
 
         # make sure we're using numpy arrays
         X = np.asarray(X)
@@ -172,7 +176,7 @@ class BioWTARegressor(object):
             weights = None
             predictions = None
 
-        log_trans_mat = np.log(self.trans_mat_)
+        log_trans_mat = _log_safe_zero(self.trans_mat_)
         for i, (crt_x, crt_y) in enumerate(zip(itX, y)):
             crt_pred = np.dot(self.weights_, crt_x)
             crt_eps = crt_y - crt_pred
@@ -180,7 +184,7 @@ class BioWTARegressor(object):
             # find best-fitting model:
             # start with prior on latent states
             if i == 0:
-                crt_obj = np.log(self.start_prob_)
+                crt_obj = _log_safe_zero(self.start_prob_)
             else:
                 crt_obj = r[i - 1] @ log_trans_mat
 
@@ -220,3 +224,22 @@ class BioWTARegressor(object):
         )
 
         return s
+
+
+def _log_safe_zero(m: np.ndarray) -> np.ndarray:
+    """ Take elementwise log of an array while avoiding warnings with elements that are
+    zero.
+
+    Parameters
+    ----------
+    m
+        Array whose elementwise log is to be taken.
+
+    Returns an array of elementwise log values, in which zeros are mapped to `-np.inf`.
+    Unlike `np.log`, this is done without issuing a warning.
+    """
+    lm = np.tile(-np.inf, np.shape(m))
+    mask = m != 0
+    lm[mask] = np.log(m[mask])
+
+    return lm
