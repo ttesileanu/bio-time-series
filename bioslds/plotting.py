@@ -96,6 +96,7 @@ def show_latent(
     bar_location: str = "top",
     show_vlines: bool = True,
     vline_kws: Optional[dict] = None,
+    shift: float = 0,
 ):
     """ Display a bar plot showing how the latent state changes with time.
 
@@ -126,6 +127,8 @@ def show_latent(
         If `True`, vertical lines are drawn to show transition points.
     vline_kws
         Keywords to pass to `axvline`.
+    shift
+        Amount by which to shift bars and lines to the right (towards higher values).
     """
     # handle trivial case
     if len(seq) == 0:
@@ -144,7 +147,7 @@ def show_latent(
     transitions = np.diff(seq).nonzero()[0] + 1
 
     # find the first transition in the given range
-    visible_mask = (transitions >= bounds[0])
+    visible_mask = (transitions + shift >= bounds[0])
     if np.any(visible_mask):
         idx0 = visible_mask.argmax()
     else:
@@ -161,9 +164,9 @@ def show_latent(
         crt_vline_kws.setdefault("c", "k")
 
         for transition in transitions[idx0:]:
-            if transition >= bounds[1]:
+            if transition + shift >= bounds[1]:
                 break
-            ax.axvline(transition, **crt_vline_kws)
+            ax.axvline(transition + shift, **crt_vline_kws)
 
     if show_bars:
         # find how big the bar is in data coordinates...
@@ -184,12 +187,12 @@ def show_latent(
             raise ValueError("Unknown bar location option.")
 
         # start drawing!
-        x0 = max(bounds[0], 0)
+        x0 = max(bounds[0] - shift, 0)
         if idx0 is not None:
             next_idx = idx0
         else:
             next_idx = int(x0)
-        while x0 < bounds[1] and int(x0) < len(seq):
+        while x0 + shift < bounds[1] and int(x0) < len(seq):
             crt_id = seq[int(x0)]
             x1 = (
                 transitions[next_idx]
@@ -199,7 +202,7 @@ def show_latent(
             x1 = min(x1, bounds[1])
             if x1 > x0:
                 patch = patches.Rectangle(
-                    (x0, bar_y),
+                    (x0 + shift, bar_y),
                     x1 - x0,
                     bar_width_data,
                     edgecolor="none",
