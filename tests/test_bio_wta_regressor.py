@@ -437,5 +437,25 @@ class TestBioWTARegressorDegenerateStartProbOrTransMat(unittest.TestCase):
             self.assertEqual(len(warn_list), 0)
 
 
+class TestBioWTARegressorChunkHintDoesNotAffectResult(unittest.TestCase):
+    def setUp(self):
+        self.n_models = 4
+        self.n_features = 3
+
+        self.rng = np.random.default_rng(30)
+        self.n_samples = 125
+        self.predictors = self.rng.normal(size=(self.n_samples, self.n_features))
+        self.dependent = self.rng.normal(size=self.n_samples)
+
+    def test_small_chunk_same_as_no_chunk(self):
+        wta1 = BioWTARegressor(self.n_models, self.n_features)
+        r1 = wta1.fit_infer(self.predictors, self.dependent)
+
+        wta2 = BioWTARegressor(self.n_models, self.n_features)
+        r2 = wta2.fit_infer(self.predictors, self.dependent, chunk_hint=12)
+
+        np.testing.assert_allclose(r1, r2)
+
+
 if __name__ == "__main__":
     unittest.main()

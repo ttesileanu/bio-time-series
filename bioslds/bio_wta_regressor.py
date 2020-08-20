@@ -6,6 +6,7 @@ import numpy as np
 
 from types import SimpleNamespace
 from typing import Union, Optional, Sequence, Callable, Tuple
+from numba import njit
 
 
 class BioWTARegressor(object):
@@ -117,7 +118,7 @@ class BioWTARegressor(object):
                 np.ones((self.n_models, self.n_models)) / self.n_models
             )
 
-        self._mode = "naive"
+        self._mode = "numba"
 
     def fit_infer(
         self,
@@ -125,6 +126,7 @@ class BioWTARegressor(object):
         y: Sequence,
         progress: Optional[Callable] = None,
         return_history: bool = False,
+        chunk_hint: int = 1000,
     ) -> Union[np.ndarray, Tuple[np.ndarray, SimpleNamespace]]:
         """ Feed a set of samples through the model, inferring which model fits best at
         each time step, and updating the model weights.
@@ -136,11 +138,21 @@ class BioWTARegressor(object):
         y
             The values of the dependent variable. Shape `(n_samples,)`.
         progress
-            Progress function that can be used as a wrapper, like `tqdm.tqdm`.
+            Progress function that can be used either as a wrapper or manually, like
+            `tqdm.tqdm`. Specifically, this needs to support wrapping an iterable, so
+            you can write, e.g., `for x in progress(X): ...`; and it needs to support
+            calling with a `total` argument, an `update`, and a `close` method, e.g.:
+                pbar = progress(total=100)
+                for i in range(100):
+                    pbar.update(1)  # note that arg is step (=1), not i!
+                pbar.close()
         return_history
             If true, the function returns a second output -- a namespace containing the
             time evolution for the weights and for the predictions at each step. These
             are stored and calculated before the weight update.
+        chunk_hint
+            A hint about how to chunk the learning. This may or may not be used. If it
+            is, the progress function will only be called once per chunk.
 
         If `return_history` is false: returns an array `r` with shape `(n_samples,
         n_models)` such  that `r[t, k]` shows, roughly, how likely it is that the sample
@@ -164,19 +176,52 @@ class BioWTARegressor(object):
 
         r = np.zeros((n_samples, self.n_models))
 
-        # handle progress function
-        if progress is None:
-            itX = X
-        else:
-            itX = progress(X)
+        fct_mapping = {
+            "naive": self._fit_infer_naive,
+            "numba": self._fit_infer_numba,
+        }
+        fct = fct_mapping[self._mode]
 
         if return_history:
             weights = np.zeros((n_samples, self.n_models, self.n_features))
             predictions = np.zeros(n_samples)
         else:
-            # this is just to assuage silly PyCharm lint
             weights = None
             predictions = None
+
+        # noinspection PyArgumentList
+        fct(
+            X,
+            y,
+            r,
+            progress=progress,
+            weights=weights,
+            predictions=predictions,
+            chunk_hint=chunk_hint,
+        )
+
+        if not return_history:
+            return r
+        else:
+            history = SimpleNamespace(weights=weights, predictions=predictions)
+            return r, history
+
+    # noinspection PyUnusedLocal
+    def _fit_infer_naive(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        r: np.ndarray,
+        progress: Optional[Callable],
+        weights: Optional[np.ndarray],
+        predictions: Optional[np.ndarray],
+        chunk_hint: int,
+    ):
+        # handle progress function
+        if progress is None:
+            itX = X
+        else:
+            itX = progress(X)
 
         log_trans_mat = _log_safe_zero(self.trans_mat_)
         for i, (crt_x, crt_y) in enumerate(zip(itX, y)):
@@ -197,18 +242,70 @@ class BioWTARegressor(object):
 
             k = r0.argmax()
 
-            if return_history:
+            if weights is not None:
                 weights[i, :, :] = self.weights_
                 predictions[i] = crt_pred[k]
 
             dw = (self.rate_weights * crt_eps[k]) * crt_x
             self.weights_[k] += dw
 
-        if not return_history:
-            return r
+    def _fit_infer_numba(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        r: np.ndarray,
+        progress: Optional[Callable],
+        weights: Optional[np.ndarray],
+        predictions: Optional[np.ndarray],
+        chunk_hint: int,
+    ):
+        if chunk_hint < 1:
+            chunk_hint = 1
+
+        # handle progress function
+        if progress is not None:
+            pbar = progress(total=len(X))
         else:
-            history = SimpleNamespace(weights=weights, predictions=predictions)
-            return r, history
+            pbar = None
+
+        log_start_prob = _log_safe_zero(self.start_prob_)
+        log_trans_mat = _log_safe_zero(self.trans_mat_)
+
+        crt_last_r = None
+        for chunk_start in range(0, len(X), chunk_hint):
+            crt_range = slice(chunk_start, chunk_start + chunk_hint)
+            crt_X = X[crt_range]
+            crt_y = y[crt_range]
+            crt_r = r[crt_range]
+
+            crt_n = len(crt_y)
+
+            crt_weights = np.zeros((crt_n, self.n_models, self.n_features))
+            crt_predictions = np.zeros(crt_n)
+
+            self.weights_ = _perform_fit_infer(
+                crt_X,
+                crt_y,
+                crt_r,
+                np.copy(self.weights_),
+                self.rate_weights,
+                crt_last_r,
+                log_start_prob,
+                log_trans_mat,
+                crt_weights,
+                crt_predictions,
+            )
+
+            if pbar is not None:
+                pbar.update(crt_n)
+            if weights is not None:
+                weights[crt_range] = crt_weights
+                predictions[crt_range] = crt_predictions
+
+            crt_last_r = crt_r[-1]
+
+        if pbar is not None:
+            pbar.close()
 
     def __repr__(self) -> str:
         r = (
@@ -227,7 +324,53 @@ class BioWTARegressor(object):
 
         return s
 
-    _available_modes = ["naive"]
+    _available_modes = ["naive", "numba"]
+
+
+@njit
+def _perform_fit_infer(
+    X: np.ndarray,
+    y: np.ndarray,
+    r: np.ndarray,
+    crt_weights: np.ndarray,
+    rate: float,
+    last_r: Optional[np.ndarray],
+    log_start_prob: np.ndarray,
+    log_trans_mat: np.ndarray,
+    weights: np.ndarray,
+    predictions: np.ndarray,
+) -> np.ndarray:
+    n = len(y)
+    for i in range(n):
+        crt_x = X[i]
+        crt_pred = np.dot(crt_weights, crt_x)
+        crt_eps = y[i] - crt_pred
+
+        # find best-fitting model:
+        # start with prior on latent states
+        if i == 0:
+            if last_r is None:
+                crt_obj = log_start_prob
+            else:
+                crt_obj = last_r @ log_trans_mat
+        else:
+            crt_obj = r[i - 1] @ log_trans_mat
+
+        crt_obj -= 0.5 * crt_eps ** 2
+        max_obj = np.max(crt_obj)
+        r0 = np.exp(crt_obj - max_obj)
+        r[i] = r0 / np.sum(r0)
+
+        k = r0.argmax()
+
+        if weights is not None:
+            weights[i, :, :] = crt_weights
+            predictions[i] = crt_pred[k]
+
+        dw = (rate * crt_eps[k]) * crt_x
+        crt_weights[k] += dw
+
+    return crt_weights
 
 
 def _log_safe_zero(m: np.ndarray) -> np.ndarray:
