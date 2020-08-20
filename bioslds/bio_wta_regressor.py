@@ -117,6 +117,8 @@ class BioWTARegressor(object):
                 np.ones((self.n_models, self.n_models)) / self.n_models
             )
 
+        self._mode = "naive"
+
     def fit_infer(
         self,
         X: Sequence,
@@ -224,6 +226,8 @@ class BioWTARegressor(object):
         )
 
         return s
+
+    _available_modes = ["naive"]
 
 
 def _log_safe_zero(m: np.ndarray) -> np.ndarray:
