@@ -7,5 +7,13 @@ setup(
     author_email="ttesileanu@flatironinstitute.org",
     url="https://github.com/ttesileanu/bio-time-series",
     packages=["bioslds"],
-    install_requires=["numpy", "scipy", "setuptools", "numba"],
+    install_requires=[
+        "numpy",
+        "scipy",
+        "setuptools",
+        "numba",
+        "matplotlib",
+        "seaborn",
+        "tqdm",
+    ],
 )
