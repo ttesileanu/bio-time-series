@@ -159,14 +159,15 @@ class TestBioWTARegressorFitInferDefaultInit(unittest.TestCase):
         np.testing.assert_allclose(dw, dw_exp)
 
     def test_history(self):
-        _, history = self.wta.fit_infer(
-            self.predictors, self.dependent, return_history=True
+        r, history = self.wta.fit_infer(
+            self.predictors[:3], self.dependent[:3], return_history=True
         )
 
         wta_again = BioWTARegressor(self.n_models, self.n_features)
         weights = []
         predictions = []
-        for crt_x, crt_y in zip(self.predictors, self.dependent):
+        exp_r = []
+        for crt_x, crt_y in zip(self.predictors[:3], self.dependent):
             weights.append(np.copy(wta_again.weights_))
 
             crt_all_pred = np.dot(wta_again.weights_, crt_x)
@@ -175,6 +176,10 @@ class TestBioWTARegressorFitInferDefaultInit(unittest.TestCase):
 
             crt_pred = crt_all_pred[crt_k]
             predictions.append(crt_pred)
+
+            exp_r.append(crt_r)
+
+        exp_r = np.asarray(exp_r)
 
         np.testing.assert_allclose(weights, history.weights)
         np.testing.assert_allclose(predictions, history.predictions)
@@ -337,7 +342,9 @@ class TestBioWTARegressorLatentPrior(unittest.TestCase):
         np.testing.assert_allclose(r1[0], r2[0])
 
         diff_log_r = np.log(r2[1]) - np.log(r1[1])
-        expected_diff_log_r = r2[0] @ np.log(trans_mat)
+        k = np.argmax(r2[0])
+        # expected_diff_log_r = r2[0] @ np.log(trans_mat)
+        expected_diff_log_r = np.log(trans_mat)[k]
         np.testing.assert_allclose(
             diff_log_r - diff_log_r[0], expected_diff_log_r - expected_diff_log_r[0]
         )

@@ -224,6 +224,8 @@ class BioWTARegressor(object):
             itX = progress(X)
 
         log_trans_mat = _log_safe_zero(self.trans_mat_)
+
+        last_k = None
         for i, (crt_x, crt_y) in enumerate(zip(itX, y)):
             crt_pred = np.dot(self.weights_, crt_x)
             crt_eps = crt_y - crt_pred
@@ -233,7 +235,7 @@ class BioWTARegressor(object):
             if i == 0:
                 crt_obj = _log_safe_zero(self.start_prob_)
             else:
-                crt_obj = r[i - 1] @ log_trans_mat
+                crt_obj = np.copy(log_trans_mat[last_k])
 
             crt_obj -= 0.5 * crt_eps ** 2
             max_obj = np.max(crt_obj)
@@ -248,6 +250,8 @@ class BioWTARegressor(object):
 
             dw = (self.rate_weights * crt_eps[k]) * crt_x
             self.weights_[k] += dw
+
+            last_k = k
 
     def _fit_infer_numba(
         self,
@@ -341,6 +345,7 @@ def _perform_fit_infer(
     predictions: np.ndarray,
 ) -> np.ndarray:
     n = len(y)
+    last_k = 0
     for i in range(n):
         crt_x = X[i]
         crt_pred = np.dot(crt_weights, crt_x)
@@ -354,7 +359,7 @@ def _perform_fit_infer(
             else:
                 crt_obj = last_r @ log_trans_mat
         else:
-            crt_obj = r[i - 1] @ log_trans_mat
+            crt_obj = np.copy(log_trans_mat[last_k])
 
         crt_obj -= 0.5 * crt_eps ** 2
         max_obj = np.max(crt_obj)
@@ -369,6 +374,8 @@ def _perform_fit_infer(
 
         dw = (rate * crt_eps[k]) * crt_x
         crt_weights[k] += dw
+
+        last_k = k
 
     return crt_weights
 
