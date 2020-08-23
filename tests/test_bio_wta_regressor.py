@@ -5,6 +5,7 @@ import warnings
 
 from unittest import mock
 from bioslds.regressors import BioWTARegressor
+from bioslds.monitor import AttributeMonitor
 
 
 class TestBioWTARegressorInit(unittest.TestCase):
@@ -158,16 +159,15 @@ class TestBioWTARegressorFitInferDefaultInit(unittest.TestCase):
 
         np.testing.assert_allclose(dw, dw_exp)
 
-    def test_history(self):
-        r, history = self.wta.fit_infer(
-            self.predictors[:3], self.dependent[:3], return_history=True
+    def test_monitor_as_sequence(self):
+        _, history = self.wta.fit_infer(
+            self.predictors, self.dependent, monitor=["weights_", "prediction_"]
         )
 
         wta_again = BioWTARegressor(self.n_models, self.n_features)
         weights = []
         predictions = []
-        exp_r = []
-        for crt_x, crt_y in zip(self.predictors[:3], self.dependent):
+        for crt_x, crt_y in zip(self.predictors, self.dependent):
             weights.append(np.copy(wta_again.weights_))
 
             crt_all_pred = np.dot(wta_again.weights_, crt_x)
@@ -177,12 +177,44 @@ class TestBioWTARegressorFitInferDefaultInit(unittest.TestCase):
             crt_pred = crt_all_pred[crt_k]
             predictions.append(crt_pred)
 
-            exp_r.append(crt_r)
+        np.testing.assert_allclose(weights, history.weights_)
+        np.testing.assert_allclose(predictions, history.prediction_)
 
-        exp_r = np.asarray(exp_r)
+    def test_monitor_as_object(self):
+        names = ["weights_"]
+        monitor = AttributeMonitor(names)
+        _, history = self.wta.fit_infer(
+            self.predictors, self.dependent, monitor=monitor
+        )
 
-        np.testing.assert_allclose(weights, history.weights)
-        np.testing.assert_allclose(predictions, history.predictions)
+        wta_alt = BioWTARegressor(self.n_models, self.n_features)
+        _, history_alt = wta_alt.fit_infer(
+            self.predictors, self.dependent, monitor=names
+        )
+
+        np.testing.assert_allclose(history.weights_, history_alt.weights_)
+
+    def test_when_monitor_is_object_history_returned_is_its_attrib(self):
+        names = ["weights_"]
+        monitor = AttributeMonitor(names)
+        _, history = self.wta.fit_infer(
+            self.predictors, self.dependent, monitor=monitor
+        )
+
+        self.assertEqual(id(history), id(monitor.history_))
+
+    def test_history_same_when_chunk_hint_changes(self):
+        names = ["prediction_"]
+        _, history = self.wta.fit_infer(
+            self.predictors, self.dependent, monitor=names, chunk_hint=1000
+        )
+
+        wta_alt = BioWTARegressor(self.n_models, self.n_features)
+        _, history_alt = wta_alt.fit_infer(
+            self.predictors, self.dependent, monitor=names, chunk_hint=1
+        )
+
+        np.testing.assert_allclose(history.prediction_, history_alt.prediction_)
 
     def test_progress_called(self):
         mock_progress = mock.MagicMock()
