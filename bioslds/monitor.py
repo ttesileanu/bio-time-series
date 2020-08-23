@@ -78,25 +78,28 @@ class AttributeMonitor(object):
         obj
             The object whose attributes should be copied.
         """
+        # initialize storage if necessary
+        for name in self.names:
+            value = getattr(obj, name)
+
+            if getattr(self.history_, name) is None:
+                # figure out the data type
+                dtype = np.asarray(value).dtype
+                # convert things like strings to dtype object
+                if np.issubdtype(dtype, np.flexible):
+                    dtype = np.object
+
+                # allocate space
+                shape = np.shape(value)
+                n_elements = (self.n_ - 1) // self.step + 1
+                setattr(
+                    self.history_, name, np.zeros((n_elements,) + shape, dtype=dtype),
+                )
+
         if self.t_ % self.step == 0:
+            # store if we need to
             for name in self.names:
                 value = getattr(obj, name)
-
-                if getattr(self.history_, name) is None:
-                    # figure out the data type
-                    dtype = np.asarray(value).dtype
-                    # convert things like strings to dtype object
-                    if np.issubdtype(dtype, np.flexible):
-                        dtype = np.object
-
-                    # allocate space
-                    shape = np.shape(value)
-                    n_elements = (self.n_ - 1) // self.step + 1
-                    setattr(
-                        self.history_,
-                        name,
-                        np.zeros((n_elements,) + shape, dtype=dtype),
-                    )
 
                 # make sure to make copies of object values!
                 if getattr(self.history_, name).dtype == np.object:
@@ -106,6 +109,68 @@ class AttributeMonitor(object):
             self.i_ += 1
 
         self.t_ += 1
+
+    def record_batch(self, obj: object):
+        """ Store a batch of entries.
+
+        This makes sure to keep only the `self.step`th entry. All the attributes of
+        `obj` with names from `self.names` should have the same length.
+
+        Parameters
+        ----------
+        obj
+            The object whose attributes should be copied.
+        """
+        # check the number of elements in this batch
+        lengths = [len(getattr(obj, name)) for name in self.names]
+        n = lengths[0]
+        if not all(_ == n for _ in lengths[1:]):
+            raise ValueError("All variables in a batch should have the same length.")
+
+        if n == 0:
+            # nothing to do
+            return
+
+        # initialize storage if necessary
+        for name in self.names:
+            value_list = getattr(obj, name)
+            value = value_list[0]
+
+            if getattr(self.history_, name) is None:
+                # figure out the data type
+                dtype = np.asarray(value).dtype
+                # convert things like strings to dtype object
+                if np.issubdtype(dtype, np.flexible):
+                    dtype = np.object
+
+                # allocate space
+                shape = np.shape(value)
+                n_elements = (self.n_ - 1) // self.step + 1
+                setattr(
+                    self.history_, name, np.zeros((n_elements,) + shape, dtype=dtype),
+                )
+
+        # store what needs to be stored
+        mask = (np.arange(self.t_, self.t_ + n) % self.step) == 0
+        n_masked = np.sum(mask)
+        for name in self.names:
+            value_list = getattr(obj, name)
+
+            # make sure to make copies of object values!
+            if getattr(self.history_, name).dtype == np.object:
+                value_list_masked = [copy.copy(obj) for obj, b in zip(value_list, mask)]
+            else:
+                if self.step == 1:
+                    value_list_masked = value_list
+                else:
+                    value_list_masked = np.asarray(value_list)[mask]
+
+            getattr(self.history_, name)[
+                self.i_ : self.i_ + n_masked
+            ] = value_list_masked
+
+        self.i_ += n_masked
+        self.t_ += n
 
     def __str__(self) -> str:
         s = (
