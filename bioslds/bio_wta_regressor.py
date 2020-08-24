@@ -345,6 +345,7 @@ def _perform_fit_infer(
 ) -> np.ndarray:
     n = len(y)
     last_k = 0
+    crt_obj = np.zeros(len(log_start_prob))
     for i in range(n):
         crt_x = X[i]
         crt_pred = np.dot(crt_weights, crt_x)
@@ -354,17 +355,17 @@ def _perform_fit_infer(
         # start with prior on latent states
         if i == 0:
             if last_r is None:
-                crt_obj = log_start_prob
+                crt_obj[:] = log_start_prob
             else:
                 last_k = np.argmax(last_r)
-                crt_obj = np.copy(log_trans_mat[last_k])
+                crt_obj[:] = log_trans_mat[last_k]
         else:
-            crt_obj = np.copy(log_trans_mat[last_k])
+            crt_obj[:] = log_trans_mat[last_k]
 
         crt_obj -= 0.5 * crt_eps ** 2
         max_obj = np.max(crt_obj)
         r0 = np.exp(crt_obj - max_obj)
-        r[i] = r0 / np.sum(r0)
+        r[i, :] = r0 / np.sum(r0)
 
         k = r0.argmax()
 
@@ -372,8 +373,7 @@ def _perform_fit_infer(
             weights[i, :, :] = crt_weights
             predictions[i] = crt_pred[k]
 
-        dw = (rate * crt_eps[k]) * crt_x
-        crt_weights[k] += dw
+        crt_weights[k, :] += (rate * crt_eps[k]) * crt_x
 
         last_k = k
 
