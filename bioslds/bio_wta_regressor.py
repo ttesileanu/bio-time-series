@@ -356,7 +356,8 @@ def _perform_fit_infer(
             if last_r is None:
                 crt_obj = log_start_prob
             else:
-                crt_obj = last_r @ log_trans_mat
+                last_k = np.argmax(last_r)
+                crt_obj = np.copy(log_trans_mat[last_k])
         else:
             crt_obj = np.copy(log_trans_mat[last_k])
 

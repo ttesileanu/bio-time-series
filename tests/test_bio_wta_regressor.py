@@ -486,11 +486,29 @@ class TestBioWTARegressorChunkHintDoesNotAffectResult(unittest.TestCase):
         self.predictors = self.rng.normal(size=(self.n_samples, self.n_features))
         self.dependent = self.rng.normal(size=self.n_samples)
 
+        self.start_prob = (lambda v: v / np.sum(v))(
+            self.rng.uniform(size=self.n_models)
+        )
+        self.trans_mat = [
+            (lambda v: v / np.sum(v))(self.rng.uniform(size=self.n_models))
+            for _ in range(self.n_models)
+        ]
+
     def test_small_chunk_same_as_no_chunk(self):
-        wta1 = BioWTARegressor(self.n_models, self.n_features)
+        wta1 = BioWTARegressor(
+            self.n_models,
+            self.n_features,
+            start_prob=self.start_prob,
+            trans_mat=self.trans_mat,
+        )
         r1 = wta1.fit_infer(self.predictors, self.dependent)
 
-        wta2 = BioWTARegressor(self.n_models, self.n_features)
+        wta2 = BioWTARegressor(
+            self.n_models,
+            self.n_features,
+            start_prob=self.start_prob,
+            trans_mat=self.trans_mat,
+        )
         r2 = wta2.fit_infer(self.predictors, self.dependent, chunk_hint=12)
 
         np.testing.assert_allclose(r1, r2)
