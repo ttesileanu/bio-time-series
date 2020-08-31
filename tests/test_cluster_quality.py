@@ -8,10 +8,6 @@ from bioslds.cluster_quality import calculate_sliding_score
 
 
 class TestCalculateSlidingScoreBasics(unittest.TestCase):
-    def test_raises_value_error_if_labels_length_do_not_match(self):
-        with self.assertRaises(ValueError):
-            calculate_sliding_score(lambda x, y: 1, [1, 2, 3], [1, 2], window_size=1)
-
     def test_returns_empty_if_window_size_larger_than_labels_length(self):
         window_loc, score = calculate_sliding_score(
             lambda x, y: 1, [1, 2, 3], [0, 1, 2], window_size=5
@@ -19,6 +15,126 @@ class TestCalculateSlidingScoreBasics(unittest.TestCase):
 
         self.assertEqual(len(window_loc), 0)
         self.assertEqual(len(score), 0)
+
+    def test_returns_empty_for_empty_inputs(self):
+        window_loc, score = calculate_sliding_score(lambda x, y: 1, [], [])
+        self.assertEqual(len(window_loc), 0)
+        self.assertEqual(len(score), 0)
+
+
+class TestCalculateSlidingScoreLengthMismatchPolicyWhenPredIsShorter(unittest.TestCase):
+    def setUp(self):
+        self.n_samples_true = 50
+        self.n_samples_pred = 45
+        self.window_size = 8
+
+        self.rng = np.random.default_rng(0)
+
+        self.labels_true = self.rng.normal(size=self.n_samples_true)
+        self.labels_pred = self.rng.normal(size=self.n_samples_pred)
+
+        self.args = (lambda x, y: np.mean(x - y), self.labels_true, self.labels_pred)
+        self.kwargs = {"window_size": self.window_size}
+
+    def test_raises_value_error_if_policy_is_raise(self):
+        with self.assertRaises(ValueError):
+            calculate_sliding_score(
+                *self.args, **self.kwargs, length_mismatch_policy="raise",
+            )
+
+    def test_align_at_start(self):
+        window_loc1, score1 = calculate_sliding_score(
+            *self.args, **self.kwargs, length_mismatch_policy="align_start"
+        )
+
+        n = min(self.n_samples_true, self.n_samples_pred)
+        window_loc2, score2 = calculate_sliding_score(
+            self.args[0], self.labels_true[:n], self.labels_pred, **self.kwargs
+        )
+
+        np.testing.assert_equal(window_loc1, window_loc2)
+        np.testing.assert_equal(score1, score2)
+
+    def test_align_at_end(self):
+        window_loc1, score1 = calculate_sliding_score(
+            *self.args, **self.kwargs, length_mismatch_policy="align_end"
+        )
+
+        n = min(self.n_samples_true, self.n_samples_pred)
+        shift = self.n_samples_true - n
+        window_loc2, score2 = calculate_sliding_score(
+            self.args[0], self.labels_true[-n:], self.labels_pred, **self.kwargs
+        )
+
+        np.testing.assert_equal(window_loc1, window_loc2 + shift)
+        np.testing.assert_equal(score1, score2)
+
+    def test_default_is_to_align_at_end(self):
+        window_loc1, score1 = calculate_sliding_score(
+            *self.args, **self.kwargs, length_mismatch_policy="align_end"
+        )
+
+        window_loc2, score2 = calculate_sliding_score(*self.args, **self.kwargs)
+
+        np.testing.assert_equal(window_loc1, window_loc2)
+        np.testing.assert_equal(score1, score2)
+
+
+class TestCalculateSlidingScoreLengthMismatchPolicyWhenPredIsLonger(unittest.TestCase):
+    def setUp(self):
+        self.n_samples_true = 44
+        self.n_samples_pred = 51
+        self.window_size = 8
+
+        self.rng = np.random.default_rng(1)
+
+        self.labels_true = self.rng.normal(size=self.n_samples_true)
+        self.labels_pred = self.rng.normal(size=self.n_samples_pred)
+
+        self.args = (lambda x, y: np.mean(x - y), self.labels_true, self.labels_pred)
+        self.kwargs = {"window_size": self.window_size}
+
+    def test_raises_value_error_if_policy_is_raise(self):
+        with self.assertRaises(ValueError):
+            calculate_sliding_score(
+                *self.args, **self.kwargs, length_mismatch_policy="raise",
+            )
+
+    def test_align_at_start(self):
+        window_loc1, score1 = calculate_sliding_score(
+            *self.args, **self.kwargs, length_mismatch_policy="align_start"
+        )
+
+        n = min(self.n_samples_true, self.n_samples_pred)
+        window_loc2, score2 = calculate_sliding_score(
+            self.args[0], self.labels_true, self.labels_pred[:n], **self.kwargs
+        )
+
+        np.testing.assert_equal(window_loc1, window_loc2)
+        np.testing.assert_equal(score1, score2)
+
+    def test_align_at_end(self):
+        window_loc1, score1 = calculate_sliding_score(
+            *self.args, **self.kwargs, length_mismatch_policy="align_end"
+        )
+
+        n = min(self.n_samples_true, self.n_samples_pred)
+        window_loc2, score2 = calculate_sliding_score(
+            self.args[0], self.labels_true, self.labels_pred[-n:], **self.kwargs
+        )
+
+        np.testing.assert_equal(window_loc1, window_loc2)
+        np.testing.assert_equal(score1, score2)
+
+    def test_default_is_to_align_at_end(self):
+        window_loc1, score1 = calculate_sliding_score(
+            *self.args, **self.kwargs, length_mismatch_policy="align_end"
+        )
+
+        window_loc2, score2 = calculate_sliding_score(*self.args, **self.kwargs)
+
+        np.testing.assert_equal(window_loc1, window_loc2)
+        np.testing.assert_equal(score1, score2)
 
 
 class TestCalculateSlidingScoreOutput(unittest.TestCase):
