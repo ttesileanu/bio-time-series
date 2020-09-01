@@ -121,6 +121,10 @@ class AttributeMonitor(object):
         obj
             The object whose attributes should be copied.
         """
+        # are we tracking anything?
+        if len(self.names) == 0:
+            return
+
         # check the number of elements in this batch
         lengths = [len(getattr(obj, name)) for name in self.names]
         n = lengths[0]

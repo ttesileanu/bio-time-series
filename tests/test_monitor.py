@@ -151,6 +151,17 @@ class TestAttributeMonitorMisc(unittest.TestCase):
 
         np.testing.assert_allclose(monitor.history_.x[1], x0)
 
+    def test_monitor_nothing(self):
+        monitor = AttributeMonitor([])
+        n = 10
+        monitor.setup(n)
+
+        for i in range(n):
+            obj = SimpleNamespace()
+            monitor.record(obj)
+
+        self.assertEqual(len(monitor.history_.__dict__), 0)
+
 
 class TestAttributeMonitorStrAndRepr(unittest.TestCase):
     def setUp(self):
@@ -272,6 +283,15 @@ class TestAttributeMonitorRecordBatch(unittest.TestCase):
         lst[2] = -1
 
         np.testing.assert_allclose(self.monitor.history_.x[0], lst0)
+
+    def test_monitor_nothing(self):
+        monitor = AttributeMonitor([])
+        monitor.setup(5)
+
+        obj = SimpleNamespace()
+        monitor.record_batch(obj)
+
+        self.assertEqual(len(monitor.history_.__dict__), 0)
 
 
 if __name__ == "__main__":
