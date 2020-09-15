@@ -1,6 +1,8 @@
 import unittest
 
 import numpy as np
+from unittest import mock
+from typing import Optional
 
 from bioslds.dataset import RandomArmaDataset
 from bioslds.arma import Arma
@@ -176,6 +178,9 @@ class TestRandomArmaDatasetArmasAtInit(unittest.TestCase):
         self.assertGreater(np.max(np.abs(arma1.a - arma2.a)), 1e-4)
         self.assertGreater(np.max(np.abs(arma1.b - arma2.b)), 1e-4)
 
+    def test_noise_scales_is_none_by_default(self):
+        self.assertIsNone(self.dataset.noise_scales)
+
 
 class TestRandomArmaDatasetMissingArmas(unittest.TestCase):
     def test_raises_if_no_armas_and_no_arma_orders(self):
@@ -279,6 +284,82 @@ class TestRandomArmaDatasetStrAndRepr(unittest.TestCase):
         )
 
         self.assertEqual(r, r_exp)
+
+
+class TestRandomArmaDatasetFixScaleInit(unittest.TestCase):
+    def setUp(self):
+        self.n_signals = 3
+        self.n_samples = 100
+        self.arma_orders = [(3, 3), (2, 3)]
+        self.fix_scale = 1.5
+        self.scales = [2.3, 0.2, 1.2, 1.5, 0.2, 1.0]
+
+        with mock.patch("bioslds.dataset.sources.fix_source_scale") as MockFixScale:
+            MockFixScale.side_effect = self.scales
+            self.dataset = RandomArmaDataset(
+                self.n_signals,
+                self.n_samples,
+                arma_orders=self.arma_orders,
+                fix_scale=self.fix_scale,
+            )
+            self.mock_fix_scale = MockFixScale
+
+    def test_fix_source_scale_called_the_right_number_of_times(self):
+        self.assertEqual(
+            self.mock_fix_scale.call_count, self.n_signals * len(self.arma_orders)
+        )
+
+    def test_fix_source_scale_called_with_correct_output_std(self):
+        self.mock_fix_scale.assert_called()
+        for call in self.mock_fix_scale.call_args_list:
+            self.assertIn("output_std", call[1])
+            self.assertAlmostEqual(call[1]["output_std"], self.fix_scale)
+
+    def test_fix_source_scale_outputs_stored_in_noise_scales(self):
+        m = len(self.arma_orders)
+        for i, scales_per_sig in enumerate(self.dataset.noise_scales):
+            np.testing.assert_allclose(scales_per_sig, self.scales[m * i : m * (i + 1)])
+
+
+class TestRandomArmaDatasetFixScaleNoiseScaledPerProcess(unittest.TestCase):
+    def setUp(self):
+        self.n_signals = 3
+        self.n_samples = 100
+        self.scales = np.asarray([2.3, 0.2, 1.2, 1.5, 0.2, 1.0])
+        self.dataset = self.create_dataset(1.0)
+
+    def create_dataset(self, fix_scale: Optional[float]):
+        with mock.patch("bioslds.dataset.sources.fix_source_scale") as MockFixScale:
+            MockFixScale.side_effect = self.scales
+            dataset = RandomArmaDataset(
+                self.n_signals,
+                self.n_samples,
+                arma_orders=[(0, 0), (0, 0)],  # ARMAs simply return their inputs
+                fix_scale=fix_scale,
+            )
+
+        return dataset
+
+    def test_noise_values_are_appropriately_scaled(self):
+        scales_i = 0
+        for i, sig_fix in enumerate(self.dataset):
+            scale_seq = self.scales[scales_i + sig_fix.usage_seq]
+            expected_y = sig_fix.u * scale_seq
+            np.testing.assert_allclose(sig_fix.y, expected_y)
+
+            scales_i += len(self.dataset.armas[i])
+
+    def test_noise_values_do_not_change_upon_using_fix_scale(self):
+        dataset_alt = self.create_dataset(None)
+
+        for sig, sig_fix in zip(dataset_alt, self.dataset):
+            np.testing.assert_allclose(sig.u, sig_fix.u)
+
+    def test_usage_seq_does_not_change_upon_using_fix_scale(self):
+        dataset_alt = self.create_dataset(None)
+
+        for sig, sig_fix in zip(dataset_alt, self.dataset):
+            np.testing.assert_allclose(sig.usage_seq, sig_fix.usage_seq)
 
 
 if __name__ == "__main__":

@@ -68,6 +68,7 @@ class RandomArmaDataset(object):
         arma_kws: Optional[dict] = None,
         rng: Union[int, np.random.RandomState, np.random.Generator] = 0,
         source: Optional[Callable] = None,
+        fix_scale: Optional[float] = None,
         initial_conditions: Optional[Tuple[Sequence, Sequence]] = None,
         **kwargs,
     ):
@@ -109,6 +110,10 @@ class RandomArmaDataset(object):
             keep the signal reproducible. However, the reproducibility guarantee cannot
             always be enforced (e.g., if `source` uses Numpy's global pseudorandom
             generator, every call will yield a different output).
+        fix_scale
+            If given, use different sources for each ARMA and adjust their scales such
+            that the output standard deviation is equal to `fix_scale`. This is used
+            only if `source` is not used.
         initial_conditions
             A tuple, `(initial_y, initial_u)`, of recent samples of the output and input
             sequences used to seed the simulation. This is directly passed to
@@ -140,10 +145,39 @@ class RandomArmaDataset(object):
             seeds.append(rand_int(0, sys.maxsize))
         self.signal_seeds = seeds
 
+        # if asked to, figure out correct scales
+        self.noise_scales = None
+        if fix_scale is not None:
+            self._figure_out_scales(fix_scale)
+
         self.source = source
         self.initial_conditions = initial_conditions
 
         self.arma_hsmm_kws = copy.copy(kwargs)
+
+    def _figure_out_scales(self, fix_scale: float):
+        """ Use fix_source_scale to normalize ARMA outputs. """
+        all_scales = []
+        for sig_arma in self.armas:
+            sig_scales = []
+            for arma in sig_arma:
+                scale = sources.fix_transformer_scale(arma, output_std=fix_scale)
+
+                # # switch to a new source for scale calculation (but only temporarily)
+                # old_source = arma.default_source
+                # arma.default_source = sources.GaussianNoise()
+                # scale = sources.fix_source_scale(
+                #     arma, output_std=fix_scale, use_copy=False
+                # )
+
+                sig_scales.append(scale)
+
+                # return to the Arma process's original source
+                # arma.default_source = old_source
+
+            all_scales.append(sig_scales)
+
+        self.noise_scales = np.asarray(all_scales)
 
     def _generate_armas(
         self,
