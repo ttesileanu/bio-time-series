@@ -665,5 +665,34 @@ class TestArmaCalculateZeros(unittest.TestCase):
         np.testing.assert_allclose(coeffs[1:], arma.b)
 
 
+class TestArmaSourceScaling(unittest.TestCase):
+    def setUp(self):
+        self.source_scaling = 1.3
+        self.rng = np.random.default_rng(1)
+        self.n = 1000
+        self.source_data = self.rng.normal(size=self.n)
+
+        self.a = [-1.1, -0.6, -0.1]
+        self.b = [0.5, 0.3]
+
+        self.arma = Arma(self.a, self.b, source_scaling=self.source_scaling)
+        self.arma_alt = Arma(self.a, self.b, source_scaling=1)
+
+        self.y, self.u = self.arma.transform(U=self.source_data)
+        self.y_alt, self.u_alt = self.arma_alt.transform(U=self.source_data)
+
+    def test_output_scaled_by_appropriate_factor(self):
+        np.testing.assert_allclose(self.y, self.source_scaling * self.y_alt)
+
+    def test_input_not_scaled(self):
+        np.testing.assert_allclose(self.u_alt, self.u)
+
+    def test_default_scaling_is_one(self):
+        arma_def = Arma(self.a, self.b)
+        y_def, _ = arma_def.transform(U=self.source_data)
+
+        np.testing.assert_allclose(y_def, self.y_alt)
+
+
 if __name__ == "__main__":
     unittest.main()

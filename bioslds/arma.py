@@ -40,6 +40,8 @@ class Arma(object):
         should take an integer keyword argument `size` and return an array of
         that length. If `default_source` is not provided, the `transform` method
         needs to be called with an input sequence.
+    source_scaling : float
+        Amount by which the source data is scaled before using.
     history_ : tuple of arrays
         A tuple, `(history_y, history_u)`, of recent samples of the output and
         input sequences. The number of samples kept depends on the order: `p`
@@ -54,6 +56,7 @@ class Arma(object):
         bias: float = 0,
         default_source: Optional[Callable] = None,
         initial_conditions: Optional[Tuple[Sequence, Sequence]] = None,
+        source_scaling: float = 1,
     ):
         """ Initialize the process.
 
@@ -74,6 +77,8 @@ class Arma(object):
             A tuple, `(initial_y, initial_u)`, of recent samples of the output
             and input sequences used to seed the simulation. If these are not
             provided, they are assumed equal to zero.
+        source_scaling
+            Amount by which the source data is scaled before using.
         """
         # making sure to make copies
         self.a = np.array(a)
@@ -81,6 +86,7 @@ class Arma(object):
         self.bias = bias
 
         self.default_source = default_source
+        self.source_scaling = source_scaling
 
         # inferred quantities
         self.p = len(self.a)
@@ -184,7 +190,7 @@ class Arma(object):
         """ Perform the transformation using a naive, slow algorithm. """
         n = len(y_out_full) - self.p
         a_flip = np.flip(self.a)
-        b_flip_big = np.hstack((np.flip(self.b), [1]))
+        b_flip_big = self.source_scaling * np.hstack((np.flip(self.b), [1]))
 
         for i in range(n):
             ar_part = np.dot(a_flip, y_out_full[i : i + self.p])
@@ -198,7 +204,7 @@ class Arma(object):
         n = len(y_out_full) - self.p
         a_flip = np.flip(self.a)
 
-        b_ext = np.hstack(([1], self.b))
+        b_ext = self.source_scaling * np.hstack(([1], self.b))
         u = np.convolve(u_out_full, b_ext, mode="valid")
 
         for i in range(n):
@@ -210,7 +216,7 @@ class Arma(object):
     ):
         """ Perform the transformation using `np.convolve` for MA part and
         Numba-accelerated code for AR. """
-        b_ext = np.hstack(([1], self.b))
+        b_ext = self.source_scaling * np.hstack(([1], self.b))
         u = np.convolve(u_out_full, b_ext, mode="valid")
 
         if self.p > 0:
@@ -223,7 +229,7 @@ class Arma(object):
         """ Perform the transformation using Numba-accelerated version of naive
         algorithm. """
         if self.q > 0:
-            b_flip_big = np.hstack((np.flip(self.b), [1]))
+            b_flip_big = self.source_scaling * np.hstack((np.flip(self.b), [1]))
             u = _perform_ma(u_out_full, b_flip_big)
         else:
             u = u_out_full
