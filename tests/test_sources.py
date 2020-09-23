@@ -201,9 +201,7 @@ class TestSourcesGaussianNoiseStrAndRepr(unittest.TestCase):
         self.rng = np.random.default_rng(1)
         self.loc = -0.5
         self.scale = 2.3
-        self.src = sources.GaussianNoise(
-            self.rng, loc=self.loc, scale=self.scale
-        )
+        self.src = sources.GaussianNoise(self.rng, loc=self.loc, scale=self.scale)
 
     def test_str(self):
         s = str(self.src)
@@ -214,8 +212,7 @@ class TestSourcesGaussianNoiseStrAndRepr(unittest.TestCase):
     def test_repr(self):
         r = repr(self.src)
         r_exp = (
-            f"GaussianNoise(loc={self.loc}, scale={self.scale}, "
-            + f"rng={self.rng})"
+            f"GaussianNoise(loc={self.loc}, scale={self.scale}, " + f"rng={self.rng})"
         )
 
         self.assertEqual(r, r_exp)
@@ -315,6 +312,57 @@ class TestSourcesFixSourceScale(unittest.TestCase):
         scale = sources.fix_source_scale(arma)
 
         self.assertAlmostEqual(scale, src.scale)
+
+
+class TestSourcesFixTransformerScale(unittest.TestCase):
+    def setUp(self):
+        self.args = (2, 2)
+        self.dummy_source = sources.Constant(1)
+
+        self.arma = make_random_arma(*self.args, rng=np.random.default_rng(0))
+        self.arma_alt = make_random_arma(
+            *self.args, rng=np.random.default_rng(0), default_source=self.dummy_source
+        )
+
+    def test_scale_matches_that_from_fix_source_scale_with_gaussian_by_default(self):
+        scale = sources.fix_transformer_scale(self.arma)
+
+        self.arma_alt.default_source = sources.GaussianNoise()
+        scale_alt = sources.fix_source_scale(self.arma_alt)
+
+        self.assertAlmostEqual(scale, scale_alt)
+
+    def test_arguments_forwarded_to_fix_source_scale(self):
+        kwargs = {"output_std": 3.5, "n_samples": 500}
+
+        scale = sources.fix_transformer_scale(self.arma, **kwargs)
+
+        self.arma_alt.default_source = sources.GaussianNoise()
+        scale_alt = sources.fix_source_scale(self.arma_alt, **kwargs)
+
+        self.assertAlmostEqual(scale, scale_alt)
+
+    def test_transformer_source_scaling_is_same_as_return_value(self):
+        scale = sources.fix_transformer_scale(self.arma)
+        self.assertAlmostEqual(scale, self.arma.source_scaling)
+
+    def test_using_different_source_constructor(self):
+        loc = 1.0
+        seed = 3
+        scale = sources.fix_transformer_scale(
+            self.arma,
+            source_constructor=lambda **kwargs: sources.GaussianNoise(
+                loc=loc, rng=seed, **kwargs
+            ),
+        )
+
+        self.arma_alt.default_source = sources.GaussianNoise(loc=loc, rng=seed)
+        scale_alt = sources.fix_source_scale(self.arma_alt)
+
+        self.assertAlmostEqual(scale, scale_alt)
+
+    def test_initial_source_is_reverted_after_function_call(self):
+        self.assertIs(self.arma_alt.default_source, self.dummy_source)
 
 
 if __name__ == "__main__":

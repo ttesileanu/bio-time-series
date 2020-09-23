@@ -3,7 +3,7 @@
 import numpy as np
 import copy
 
-from typing import Sequence, Union
+from typing import Sequence, Union, Callable
 from scipy import optimize
 
 
@@ -121,18 +121,12 @@ class GaussianNoise(object):
         return f"GaussianNoise(loc={self.loc}, scale={self.scale})"
 
     def __repr__(self) -> str:
-        r = (
-            f"GaussianNoise(loc={self.loc}, scale={self.scale}, "
-            + f"rng={self.rng})"
-        )
+        r = f"GaussianNoise(loc={self.loc}, scale={self.scale}, " + f"rng={self.rng})"
         return r
 
 
 def fix_source_scale(
-    transformer,
-    output_std: float = 1,
-    n_samples: int = 1000,
-    use_copy: bool = True,
+    transformer, output_std: float = 1, n_samples: int = 1000, use_copy: bool = True,
 ) -> float:
     """ Adjust the scale for a data source to fix the output variance of a
     transformer.
@@ -170,11 +164,55 @@ def fix_source_scale(
         return np.var(samples) / output_var - 1
 
     soln = optimize.root_scalar(
-        objective,
-        x0=np.sqrt(output_var / 2),
-        x1=np.sqrt(2 * output_var),
-        maxiter=100,
+        objective, x0=np.sqrt(output_var / 2), x1=np.sqrt(2 * output_var), maxiter=100,
     )
 
     source.scale = np.abs(soln.root)
     return source.scale
+
+
+def fix_transformer_scale(
+    transformer,
+    output_std: float = 1,
+    n_samples: int = 1000,
+    source_constructor: Callable = GaussianNoise,
+) -> float:
+    """ Adjust the source scaling for a transformer in order to fix its output variance.
+
+    Parameters
+    ----------
+    transformer
+        Transformer whose output variance is optimized. This should behave like
+        `Arma`: it needs to have a `transform` method that can be called like
+        `transformer.transform(U=source)`; it needs an attribute called
+        `default_source`; and it needs an attribute called `source_scaling`.
+    output_std
+        Value to which to fix the transformer's output standard deviation.
+    n_samples
+        Number of samples to generate for each optimization iteration.
+    source_constructor
+        Callable to use to create a source for adjusting the scaling factor.
+        The created object needs to have a `scale` attribute.
+
+    Returns the final value for the scale.
+    """
+    # don't mess with the transformer's initial default_source
+    old_source = transformer.default_source
+
+    # make a new source, and use fix_source_scale
+    source = source_constructor()
+    transformer.default_source = source
+
+    # XXX this isn't very robust: the meaning of `scale` to a particular source may well
+    # be very different from simply scaling the source values after they're generated
+    scale = fix_source_scale(
+        transformer, output_std=output_std, n_samples=n_samples, use_copy=False
+    )
+
+    # revert to original source
+    transformer.default_source = old_source
+
+    # set scaling factor
+    transformer.source_scaling = scale
+
+    return scale
