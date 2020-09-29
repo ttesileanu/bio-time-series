@@ -235,15 +235,15 @@ def show_latent(
         if idx0 is not None:
             next_idx = idx0
         else:
-            next_idx = int(x0)
+            next_idx = len(transitions) + 1
         while x0 + shift < bounds[1] and int(x0) < len(seq):
             crt_id = seq[int(x0)]
             x1 = (
                 transitions[next_idx]
                 if next_idx < len(transitions)
-                else min(bounds[1], len(seq))
+                else len(seq)
             )
-            x1 = min(x1, bounds[1])
+            x1 = min(x1, bounds[1] - shift)
             if x1 > x0:
                 patch = patches.Rectangle(
                     (x0 + shift, bar_y),
