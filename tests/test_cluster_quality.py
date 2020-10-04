@@ -1,10 +1,11 @@
 import unittest
 
+import itertools
 import numpy as np
 
 from unittest.mock import Mock
 
-from bioslds.cluster_quality import calculate_sliding_score
+from bioslds.cluster_quality import calculate_sliding_score, unordered_accuracy_score
 
 
 class TestCalculateSlidingScoreBasics(unittest.TestCase):
@@ -240,6 +241,112 @@ class TestCalculateSlidingScoreMisc(unittest.TestCase):
         )
 
         mock_progress.assert_called()
+
+
+class TestUnorderedAccuracyScoreOptimalAssignment(unittest.TestCase):
+    def setUp(self):
+        self.rng = np.random.default_rng(12)
+        self.n_clusters = 5
+        self.n_samples = 43
+        self.seq1 = self.rng.integers(0, self.n_clusters, size=self.n_samples)
+        self.seq2 = self.rng.integers(0, self.n_clusters, size=self.n_samples)
+
+    def test_identical_returns_identity(self):
+        _, best_assignment = unordered_accuracy_score(
+            self.seq1, self.seq1, return_assignment=True
+        )
+
+        np.testing.assert_equal(best_assignment, np.arange(self.n_clusters))
+
+    def test_arbitrary_permutation_correctly_identified(self):
+        perm = self.rng.permutation(self.n_clusters)
+        seq1_perm = perm[self.seq1]
+        _, best_assignment = unordered_accuracy_score(
+            seq1_perm, self.seq1, return_assignment=True
+        )
+
+        np.testing.assert_equal(best_assignment, perm)
+
+    def test_score_matches_shuffle(self):
+        score, best_assignment = unordered_accuracy_score(
+            self.seq1, self.seq2, return_assignment=True
+        )
+        seq2_shuf = best_assignment[self.seq2]
+        # noinspection PyTypeChecker
+        score_exp: float = np.mean(self.seq1 == seq2_shuf)
+
+        self.assertAlmostEqual(score_exp, score)
+
+    def test_graceful_fail_if_inputs_are_empty(self):
+        _, best_assignment = unordered_accuracy_score([], [], return_assignment=True)
+        self.assertEqual(0, len(best_assignment))
+
+
+class TestUnorderedAccuracyScoreBasic(unittest.TestCase):
+    def test_raises_value_error_if_lengths_mismatched(self):
+        with self.assertRaises(ValueError):
+            unordered_accuracy_score([1], [1, 2])
+
+    def test_graceful_fail_if_inputs_are_empty(self):
+        score = unordered_accuracy_score([], [])
+        self.assertEqual(score, 1)
+
+
+class TestUnorderedAccuracyScore(unittest.TestCase):
+    def setUp(self):
+        self.rng = np.random.default_rng(13)
+        self.n_clusters = 4
+        self.n_samples = 46
+        self.seq1 = self.rng.integers(0, self.n_clusters, size=self.n_samples)
+        self.seq2 = self.rng.integers(0, self.n_clusters, size=self.n_samples)
+
+    def test_identical_returns_score_one(self):
+        score = unordered_accuracy_score(self.seq1, self.seq1)
+
+        self.assertAlmostEqual(score, score)
+
+    def test_symmetry(self):
+        score1 = unordered_accuracy_score(self.seq1, self.seq2)
+        score2 = unordered_accuracy_score(self.seq2, self.seq1)
+        self.assertAlmostEqual(score1, score2)
+
+    def test_arbitrary_permutation_yields_score_one(self):
+        perm = self.rng.permutation(self.n_clusters)
+        seq1_perm = perm[self.seq1]
+        score = unordered_accuracy_score(self.seq1, seq1_perm)
+        self.assertAlmostEqual(score, 1)
+
+    def test_normalize_divides_by_total_length(self):
+        score_count = unordered_accuracy_score(self.seq1, self.seq2, normalize=False)
+        score_frac = unordered_accuracy_score(self.seq1, self.seq2, normalize=True)
+
+        self.assertAlmostEqual(score_count, score_frac * self.n_samples)
+
+    def test_normalize_defaults_to_true(self):
+        score = unordered_accuracy_score(self.seq1, self.seq2)
+        score_frac = unordered_accuracy_score(self.seq1, self.seq2, normalize=True)
+
+        self.assertAlmostEqual(score, score_frac)
+
+    def test_score_matches_count_and_shuffle_when_normalize_is_false(self):
+        score_count, best_assignment = unordered_accuracy_score(
+            self.seq1, self.seq2, return_assignment=True, normalize=False
+        )
+        seq2_shuf = best_assignment[self.seq2]
+        # noinspection PyTypeChecker
+        score_exp: int = np.sum(self.seq1 == seq2_shuf)
+
+        self.assertAlmostEqual(score_exp, score_count)
+
+    def test_score_matches_best_permutation(self):
+        score = unordered_accuracy_score(self.seq1, self.seq2)
+
+        perm_scores = []
+        for crt_perm in itertools.permutations(np.arange(self.n_clusters)):
+            crt_seq2 = np.asarray(crt_perm)[self.seq2]
+            perm_scores.append(np.mean(self.seq1 == crt_seq2))
+
+        self.assertAlmostEqual(np.max(perm_scores), score)
 
 
 if __name__ == "__main__":
