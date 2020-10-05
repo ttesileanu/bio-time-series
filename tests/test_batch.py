@@ -104,8 +104,8 @@ class TestHyperScoreARRegressorCalls(unittest.TestCase):
 
         for call in self.regressor_class.call_args_list:
             for key, value in self.kwargs.items():
-                self.assertIn(key, call.kwargs)
-                self.assertEqual(call.kwargs[key], value)
+                self.assertIn(key, call[1])
+                self.assertEqual(call[1][key], value)
 
     def test_regressor_class_called_n_signals_times(self):
         self.assertEqual(self.regressor_class.call_count, self.n_signals)
@@ -115,29 +115,29 @@ class TestHyperScoreARRegressorCalls(unittest.TestCase):
 
     def test_no_positional_args_passed_to_regressor_class_constructor(self):
         for call in self.regressor_class.call_args_list:
-            self.assertEqual(len(call.args), 0)
+            self.assertEqual(len(call[0]), 0)
 
     def test_rng_passed_to_regressor_class_constructor(self):
         self.assertTrue(self.regressor_class.called)
         for call in self.regressor_class.call_args_list:
-            self.assertIn("rng", call.kwargs)
+            self.assertIn("rng", call[1])
 
     def test_fit_infer_ar_called_once_for_each_regressor(self):
         self.assertEqual(self.mock_fit_infer_ar.call_count, self.n_signals)
         for i, call in enumerate(self.mock_fit_infer_ar.call_args_list):
-            self.assertIs(call.args[0], self.regressors[i])
+            self.assertIs(call[0][0], self.regressors[i])
 
     def test_fit_infer_ar_called_once_for_each_signal(self):
         self.assertEqual(self.mock_fit_infer_ar.call_count, self.n_signals)
         for i, call in enumerate(self.mock_fit_infer_ar.call_args_list):
-            self.assertIs(call.args[1], self.dataset[i].y)
+            self.assertIs(call[0][1], self.dataset[i].y)
 
     def test_fit_kws_are_forwarded_to_fit_infer_ar(self):
         self.assertTrue(self.mock_fit_infer_ar.called)
         for call in self.mock_fit_infer_ar.call_args_list:
             for key, value in self.fit_kws.items():
-                self.assertIn(key, call.kwargs)
-                self.assertEqual(call.kwargs[key], value)
+                self.assertIn(key, call[1])
+                self.assertEqual(call[1][key], value)
 
 
 class TestHyperScoreARMetricCalls(unittest.TestCase):
@@ -175,14 +175,14 @@ class TestHyperScoreARMetricCalls(unittest.TestCase):
     def test_metric_is_called_with_usage_seq_as_first_arg(self):
         self.assertEqual(self.metric.call_count, self.n_signals)
         for i, call in enumerate(self.metric.call_args_list):
-            np.testing.assert_equal(call.args[0], self.dataset[i].usage_seq)
+            np.testing.assert_equal(call[0][0], self.dataset[i].usage_seq)
 
     def test_metric_is_called_with_argmaxed_infer_result_as_second_arg(self):
         self.assertEqual(self.metric.call_count, self.n_signals)
         for i, call in enumerate(self.metric.call_args_list):
             crt_r = self.regressors[i].fit_infer.return_value[0]
             crt_inferred_usage = crt_r.argmax(axis=1)
-            np.testing.assert_equal(call.args[1], crt_inferred_usage)
+            np.testing.assert_equal(call[0][1], crt_inferred_usage)
 
     def test_first_output_is_median_of_scores_from_metric(self):
         # noinspection PyTypeChecker
@@ -238,8 +238,8 @@ class TestHyperScoreARRng(unittest.TestCase):
         """
         self.assertEqual(len(calls1), len(calls2))
         for call1, call2 in zip(calls1, calls2):
-            rng1 = call1.kwargs["rng"]
-            rng2 = call2.kwargs["rng"]
+            rng1 = call1[1]["rng"]
+            rng2 = call2[1]["rng"]
 
             v1 = rng1.normal(size=n_samples)
             v2 = rng2.normal(size=n_samples)
@@ -295,7 +295,7 @@ class TestHyperScoreARRng(unittest.TestCase):
         n_samples = 10
         for call, seed in zip(calls, res[1].regressor_seeds):
             rng_exp = np.random.default_rng(seed)
-            rng = call.kwargs["rng"]
+            rng = call[1]["rng"]
 
             v_exp = rng_exp.normal(size=n_samples)
             v = rng.normal(size=n_samples)
@@ -345,8 +345,8 @@ class TestHyperScoreARTestAmount(unittest.TestCase):
         labels_true_exp = usage0[-n:]
         labels_pred_exp = inferred0[-n:]
 
-        np.testing.assert_equal(call.args[0], labels_true_exp)
-        np.testing.assert_equal(call.args[1], labels_pred_exp)
+        np.testing.assert_equal(call[0][0], labels_true_exp)
+        np.testing.assert_equal(call[0][1], labels_pred_exp)
 
     def test_appropriate_test_samples_are_passed_to_metric(self):
         samples = 23
@@ -363,8 +363,8 @@ class TestHyperScoreARTestAmount(unittest.TestCase):
         labels_true_exp = usage1[-samples:]
         labels_pred_exp = inferred1[-samples:]
 
-        np.testing.assert_equal(call.args[0], labels_true_exp)
-        np.testing.assert_equal(call.args[1], labels_pred_exp)
+        np.testing.assert_equal(call[0][0], labels_true_exp)
+        np.testing.assert_equal(call[0][1], labels_pred_exp)
 
     def test_default_test_fraction_is_twenty_percent(self):
         # noinspection PyTypeChecker
@@ -417,8 +417,8 @@ class TestHyperScoreARProgress(unittest.TestCase):
 
         regressor.fit_infer.assert_called()
         call = regressor.fit_infer.call_args_list[0]
-        self.assertIn("progress", call.kwargs)
-        self.assertIs(call.kwargs["progress"], mock_progress)
+        self.assertIn("progress", call[1])
+        self.assertIs(call[1]["progress"], mock_progress)
 
 
 class TestHyperScoreARMonitor(unittest.TestCase):
@@ -457,8 +457,8 @@ class TestHyperScoreARMonitor(unittest.TestCase):
 
         self.regressors[0].fit_infer.assert_called()
         call = self.regressors[0].fit_infer.call_args_list[0]
-        self.assertIn("monitor", call.kwargs)
-        self.assertEqual(call.kwargs["monitor"], monitor)
+        self.assertIn("monitor", call[1])
+        self.assertEqual(call[1]["monitor"], monitor)
 
     def test_when_monitor_step_is_not_one_an_attribute_monitor_is_created(self):
         monitor = ["a", "b"]
@@ -476,11 +476,11 @@ class TestHyperScoreARMonitor(unittest.TestCase):
             MockAttributeMonitor.assert_called()
             call = MockAttributeMonitor.call_args_list[0]
 
-            self.assertEqual(len(call.args), 1)
-            self.assertEqual(call.args[0], monitor)
+            self.assertEqual(len(call[0]), 1)
+            self.assertEqual(call[0][0], monitor)
 
-            self.assertIn("step", call.kwargs)
-            self.assertEqual(call.kwargs["step"], step)
+            self.assertIn("step", call[1])
+            self.assertEqual(call[1]["step"], step)
 
     def test_fit_infer_details_has_history_for_each_signal(self):
         _, details = hyper_score_ar(self.regressor_class, self.dataset, self.metric)

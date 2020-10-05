@@ -20,29 +20,29 @@ class TestRandomMaximizeObjectiveFunctionCalls(unittest.TestCase):
 
     def test_fct_called_with_no_positional_args(self):
         for call in self.fct.call_args_list:
-            self.assertEqual(len(call.args), 0)
+            self.assertEqual(len(call[0]), 0)
 
     def test_fct_called_with_all_necessary_kwargs(self):
         for call in self.fct.call_args_list:
             for key in self.param_ranges:
-                self.assertIn(key, call.kwargs)
+                self.assertIn(key, call[1])
 
     def test_fct_not_called_with_extraneous_kwargs(self):
         for call in self.fct.call_args_list:
-            for key in call.kwargs:
+            for key in call[1]:
                 self.assertIn(key, self.param_ranges)
 
     def test_generated_param_values_are_in_correct_range(self):
         for call in self.fct.call_args_list:
             for key, (lo, hi) in self.param_ranges.items():
-                value = call.kwargs[key]
+                value = call[1][key]
                 self.assertGreaterEqual(value, lo)
                 self.assertLess(value, hi)
 
     def test_generated_param_values_have_correct_type(self):
         for call in self.fct.call_args_list:
             for key, value_type in self.param_types.items():
-                value = np.asarray([call.kwargs[key]])
+                value = np.asarray([call[1][key]])
                 self.assertTrue(np.issubdtype(value.dtype, value_type))
 
 
@@ -65,8 +65,8 @@ class TestRandomMaximizeRngCalls(unittest.TestCase):
 
         for call1, call2 in zip(fct1.call_args_list, fct2.call_args_list):
             for key in self.param_ranges:
-                value1 = call1.kwargs[key]
-                value2 = call2.kwargs[key]
+                value1 = call1[1][key]
+                value2 = call2[1][key]
 
                 self.assertAlmostEqual(value1, value2)
 
@@ -114,7 +114,7 @@ class TestRandomMaximizeReturnValues(unittest.TestCase):
 
         for key in self.param_ranges:
             value = self.out[1][key]
-            value_exp = call_i.kwargs[key]
+            value_exp = call_i[1][key]
 
             self.assertAlmostEqual(value, value_exp)
 
@@ -123,7 +123,7 @@ class TestRandomMaximizeReturnValues(unittest.TestCase):
             param_iter = self.out[2]["params"][i]
             for key in self.param_ranges:
                 value = param_iter[key]
-                value_exp = call.kwargs[key]
+                value_exp = call[1][key]
 
                 self.assertAlmostEqual(value, value_exp)
 
@@ -159,7 +159,7 @@ class TestRandomMaximizeWithScalarFunction(unittest.TestCase):
 
         for key in self.param_ranges:
             value = self.out[1][key]
-            value_exp = call_i.kwargs[key]
+            value_exp = call_i[1][key]
 
             self.assertAlmostEqual(value, value_exp)
 

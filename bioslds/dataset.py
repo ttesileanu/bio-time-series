@@ -9,11 +9,9 @@ from bioslds.arma import make_random_arma
 from bioslds.arma_hsmm import ArmaHSMM
 from bioslds import sources
 
-from dataclasses import dataclass
 from typing import Sequence, Optional, Union, Tuple, Callable
 
 
-@dataclass(frozen=True)
 class SwitchingSignal:
     # noinspection PyUnresolvedReferences
     """ A signal generated from switching dynamical processes.
@@ -28,9 +26,13 @@ class SwitchingSignal:
         A vector of integers indicating which model was used at each time step.
     """
 
-    y: np.ndarray
-    u: np.ndarray
-    usage_seq: np.ndarray
+    def __init__(self, y: np.ndarray, u: np.ndarray, usage_seq: np.ndarray):
+        self.y = y
+        self.u = u
+        self.usage_seq = usage_seq
+
+    def __repr__(self) -> str:
+        return f"SwitchingSignal(y={self.y}, u={self.u}, usage_seq={self.usage_seq})"
 
 
 class RandomArmaDataset(object):

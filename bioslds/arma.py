@@ -1,7 +1,5 @@
 """ Define a class to generate samples from ARMA processes. """
 
-from __future__ import annotations
-
 import numpy as np
 import copy
 
@@ -297,7 +295,7 @@ class Arma(object):
         zeros = self.calculate_zeros()
         return all(np.abs(zeros) < 1)
 
-    def inverse(self, **kwargs) -> Arma:
+    def inverse(self, **kwargs) -> "Arma":
         """ Return the inverse process.
 
         The inverse is defined by the condition that, when applied to the output
@@ -313,7 +311,7 @@ class Arma(object):
 
         return Arma(inv_a, inv_b, bias=inv_bias, **kwargs,)
 
-    def copy(self) -> Arma:
+    def copy(self) -> "Arma":
         """ Make a deep copy of the current process.
 
         This ensures that the history and coefficients are copied by value so

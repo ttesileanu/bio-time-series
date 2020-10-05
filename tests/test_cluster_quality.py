@@ -187,13 +187,13 @@ class TestCalculateSlidingScoreOutput(unittest.TestCase):
 
     def test_metric_called_with_appropriate_inputs(self):
         for crt_loc, crt_call in zip(self.window_loc, self.metric.call_args_list):
-            self.assertEqual(len(crt_call.kwargs), 0)
-            self.assertEqual(len(crt_call.args), 2)
+            self.assertEqual(len(crt_call[1]), 0)
+            self.assertEqual(len(crt_call[0]), 2)
 
             exp_true = self.labels_true[crt_loc : crt_loc + self.window_size]
             exp_pred = self.labels_pred[crt_loc : crt_loc + self.window_size]
-            np.testing.assert_equal(crt_call.args[0], exp_true)
-            np.testing.assert_equal(crt_call.args[1], exp_pred)
+            np.testing.assert_equal(crt_call[0][0], exp_true)
+            np.testing.assert_equal(crt_call[0][1], exp_pred)
 
 
 class TestCalculateSlidingScoreMisc(unittest.TestCase):

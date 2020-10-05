@@ -4,7 +4,6 @@ from bioslds.monitor import AttributeMonitor
 
 import copy
 
-from dataclasses import dataclass
 from types import SimpleNamespace
 
 import numpy as np
@@ -48,17 +47,17 @@ class TestAttributeMonitorTypes(unittest.TestCase):
         self.obj_data = self.n * [object()]
         self.i_again_data = [1.0] + [2] * (self.n - 1)
 
-        @dataclass
-        class ToTrack:
-            x: float = 0
-            v: np.ndarray = 0
-            hi_d: np.ndarray = 0
-            i: int = 0
-            i_float: float = 0
-            b: bool = False
-            s: str = ""
-            obj: object = None
-            i_again: float = 0
+        class ToTrack(object):
+            def __init__(self):
+                self.x = 0.0
+                self.v = 0
+                self.hi_d = np.array([])
+                self.i = 0
+                self.i_float = 0.0
+                self.b = False
+                self.s = ""
+                self.obj: object = None
+                self.i_again = 0
 
         self.obj = ToTrack()
         self.monitor.setup(self.n)
@@ -131,9 +130,9 @@ class TestAttributeMonitorStep(unittest.TestCase):
 
 class TestAttributeMonitorMisc(unittest.TestCase):
     def test_store_copies_objects(self):
-        @dataclass
-        class ToTrack:
-            x: object = None
+        class ToTrack(object):
+            def __init__(self):
+                self.x = None
 
         obj = ToTrack()
 
