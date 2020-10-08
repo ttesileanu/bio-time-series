@@ -516,5 +516,38 @@ class TestHyperScoreARMonitor(unittest.TestCase):
             np.testing.assert_allclose(history.r, self.r[i][::step])
 
 
+class TestHyperScoreARRegressorDetails(unittest.TestCase):
+    def setUp(self):
+        self.rng = np.random.default_rng(0)
+        self.n_signals = 4
+        self.n_samples = 35
+        self.n_models = 3
+        self.dataset = [
+            SimpleNamespace(
+                y=self.rng.normal(size=self.n_samples),
+                usage_seq=self.rng.integers(0, self.n_models, size=self.n_samples),
+            )
+            for _ in range(self.n_signals)
+        ]
+        self.metric = lambda x, y: 1.0
+
+        self.regressors = [Mock(n_features=4) for _ in range(self.n_signals)]
+        for regressor in self.regressors:
+            regressor.fit_infer.return_value = (
+                self.rng.uniform(size=(self.n_samples, self.n_models)),
+                SimpleNamespace(),
+            )
+
+        self.regressor_class = Mock(side_effect=self.regressors)
+        self.res = hyper_score_ar(self.regressor_class, self.dataset, self.metric)
+
+    def test_regressors_are_returned_in_details(self):
+        self.assertTrue(hasattr(self.res[1], "regressors"))
+
+    def test_returned_regressors_are_correct(self):
+        for regressor, regressor_exp in zip(self.res[1].regressors, self.regressors):
+            self.assertIs(regressor, regressor_exp)
+
+
 if __name__ == "__main__":
     unittest.main()

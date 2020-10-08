@@ -84,6 +84,7 @@ def hyper_score_ar(
     `details` is a `SimpleNamespace` containing more details from the run:
         trial_scores (np.ndarray)       -- The scores for each trial.
         regressor_seeds (np.ndarray)    -- Random seeds used to initialize regressors.
+        regressors (Sequence)           -- Regressors used for each trial.
         history (Sequence)              -- Monitoring data for each trial.
     """
     # handle seed form of rng
@@ -127,6 +128,7 @@ def hyper_score_ar(
     if progress is not None:
         it = progress(it)
     history = []
+    regressors = []
     for i, signal in enumerate(it):
         # create the regressor
         crt_args = copy.copy(kwargs)
@@ -157,12 +159,17 @@ def hyper_score_ar(
             crt_n = test_samples
         crt_score = metric(signal.usage_seq[-crt_n:], crt_inferred_usage[-crt_n:])
 
+        regressors.append(regressor)
+
         trial_scores[i] = crt_score
 
     # noinspection PyTypeChecker
     summary_score: float = np.median(trial_scores)
     details = SimpleNamespace(
-        trial_scores=trial_scores, regressor_seeds=regressor_seeds, history=history
+        trial_scores=trial_scores,
+        regressor_seeds=regressor_seeds,
+        regressors=regressors,
+        history=history,
     )
 
     return summary_score, details
