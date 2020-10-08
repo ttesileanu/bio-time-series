@@ -30,7 +30,7 @@ def hyper_score_ar(
 
     This runs a time series clustering algorithm on a set of signals and assesses the
     accuracy of the output using a given metric. This is done using a given set of
-    hyperparamater values for the algorithm. The function then returns a summary score.
+    hyperparameter values for the algorithm. The function then returns a summary score.
 
     Parameters
     ----------
