@@ -33,8 +33,8 @@ class BioWTARegressor(object):
         Number of models in mixture.
     n_features : int
         Number of predictor variables (features).
-    rate_weights : float
-        Learning rate for the regression weights.
+    rate_weights : float, np.ndarray, callable
+        Learning rate or learning schedule for the regression weights.
     weights_ : array, shape `(n_models, n_features)`
         Regression weights for each of the models.
     prediction_ : float
@@ -52,7 +52,7 @@ class BioWTARegressor(object):
         self,
         n_models: int,
         n_features: int,
-        rate_weights: float = 1e-3,
+        rate_weights: Union[float, Sequence, Callable[[float], float]] = 1e-3,
         rng: Union[int, np.random.RandomState, np.random.Generator] = 0,
         weights: Optional[Sequence] = None,
         start_prob: Optional[Sequence] = None,
@@ -67,7 +67,11 @@ class BioWTARegressor(object):
         n_features
             Number of predictor variables (features).
         rate_weights
-            Learning rate for the regression weights.
+            Learning rate or learning schedule for the regression weights. If this is a
+            sequence, the `i`th element is used as the learning rate at the `i`th step.
+            The last element is used for any steps beyond the length of the sequence.
+            If this is a callable, the learning rate is obtained by calling it with the
+            current step number as an argument.
         rng
             Random number generator or seed to use for generating initial weight
             values. If seed, a random number generator is created using
@@ -88,7 +92,12 @@ class BioWTARegressor(object):
         """
         self.n_models = n_models
         self.n_features = n_features
-        self.rate_weights = rate_weights
+
+        if callable(rate_weights) or not hasattr(rate_weights, "__len__"):
+            self.rate_weights = rate_weights
+        else:
+            self.rate_weights = np.array(rate_weights)
+        self._rate_weights_vector = None
 
         # handle integer seeds
         if isinstance(rng, int):
@@ -120,7 +129,7 @@ class BioWTARegressor(object):
         else:
             self.trans_mat_ = np.ones((self.n_models, self.n_models)) / self.n_models
 
-        self._mode = "numba"
+        self._mode = "naive"
 
     def fit_infer(
         self,
@@ -190,6 +199,24 @@ class BioWTARegressor(object):
             if hasattr(monitor, "__len__") and not hasattr(monitor, "setup"):
                 monitor = AttributeMonitor(monitor)
 
+        # figure out per-step rates
+        n = len(y)
+        if callable(self.rate_weights):
+            self._rate_weights_vector = np.array(
+                [self.rate_weights(_) for _ in range(n)]
+            )
+        elif hasattr(self.rate_weights, "__len__"):
+            if n <= len(self.rate_weights):
+                self._rate_weights_vector = self.rate_weights[:n]
+            else:
+                n_extra = n - len(self.rate_weights)
+                last_rate = self.rate_weights[-1]
+                self._rate_weights_vector = np.hstack(
+                    (self.rate_weights, n_extra * [last_rate])
+                )
+        else:
+            self._rate_weights_vector = np.repeat(self.rate_weights, n)
+
         # noinspection PyArgumentList
         fct(
             X, y, r, progress=progress, monitor=monitor, chunk_hint=chunk_hint,
@@ -244,7 +271,8 @@ class BioWTARegressor(object):
             if monitor is not None:
                 monitor.record(self)
 
-            dw = (self.rate_weights * crt_eps[k]) * crt_x
+            crt_rate_weights = self._rate_weights_vector[i]
+            dw = (crt_rate_weights * crt_eps[k]) * crt_x
             self.weights_[k] += dw
 
             last_k = k
@@ -290,7 +318,7 @@ class BioWTARegressor(object):
                 crt_y,
                 crt_r,
                 np.copy(self.weights_),
-                self.rate_weights,
+                self._rate_weights_vector,
                 crt_last_r,
                 log_start_prob,
                 log_trans_mat,
@@ -336,7 +364,7 @@ def _perform_fit_infer(
     y: np.ndarray,
     r: np.ndarray,
     crt_weights: np.ndarray,
-    rate: float,
+    rate: np.ndarray,
     last_r: Optional[np.ndarray],
     log_start_prob: np.ndarray,
     log_trans_mat: np.ndarray,
@@ -373,7 +401,7 @@ def _perform_fit_infer(
             weights[i, :, :] = crt_weights
             predictions[i] = crt_pred[k]
 
-        crt_weights[k, :] += (rate * crt_eps[k]) * crt_x
+        crt_weights[k, :] += (rate[i] * crt_eps[k]) * crt_x
 
         last_k = k
 

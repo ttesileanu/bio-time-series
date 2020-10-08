@@ -514,5 +514,125 @@ class TestBioWTARegressorChunkHintDoesNotAffectResult(unittest.TestCase):
         np.testing.assert_allclose(r1, r2)
 
 
+class TestBioWTARegressorVectorLearningRate(unittest.TestCase):
+    def setUp(self):
+        self.n_models = 2
+        self.n_features = 3
+
+        self.rng = np.random.default_rng(0)
+        self.n_samples = 53
+        self.predictors = self.rng.normal(size=(self.n_samples, self.n_features))
+        self.dependent = self.rng.normal(size=self.n_samples)
+
+        self.rate = 0.005
+
+        self.wta_full = BioWTARegressor(
+            self.n_models, self.n_features, rate_weights=self.rate
+        )
+        self.r_full = self.wta_full.fit_infer(self.predictors, self.dependent)
+
+        self.n_partial = self.n_samples // 2
+        self.wta_partial = BioWTARegressor(
+            self.n_models, self.n_features, rate_weights=self.rate
+        )
+        self.r_partial = self.wta_partial.fit_infer(
+            self.predictors[: self.n_partial], self.dependent[: self.n_partial]
+        )
+
+    def test_weights_different_in_partial_and_full_run(self):
+        self.assertGreater(
+            np.max(np.abs(self.wta_partial.weights_ - self.wta_full.weights_)), 1e-3
+        )
+
+    def test_switching_rate_to_zero_fixes_weights(self):
+        schedule = np.zeros(self.n_samples)
+        schedule[: self.n_partial] = self.rate
+        wta = BioWTARegressor(self.n_models, self.n_features, rate_weights=schedule)
+
+        wta.fit_infer(self.predictors, self.dependent)
+
+        np.testing.assert_allclose(wta.weights_, self.wta_partial.weights_)
+
+    def test_resulting_r_same_if_rate_is_constant_then_switches(self):
+        schedule = np.zeros(self.n_samples)
+        schedule[: self.n_partial] = self.rate
+        wta = BioWTARegressor(self.n_models, self.n_features, rate_weights=schedule)
+
+        r = wta.fit_infer(self.predictors, self.dependent)
+        np.testing.assert_allclose(r[: self.n_partial], self.r_partial)
+
+    def test_last_value_of_rate_is_used_if_more_samples_than_len_rate(self):
+        n = 3 * self.n_samples // 4
+        schedule_short = self.rng.uniform(0, self.rate, size=n)
+        schedule = np.hstack(
+            (schedule_short, (self.n_samples - n) * [schedule_short[-1]])
+        )
+
+        wta1 = BioWTARegressor(
+            self.n_models, self.n_features, rate_weights=schedule_short
+        )
+        wta2 = BioWTARegressor(self.n_models, self.n_features, rate_weights=schedule)
+
+        wta1.fit_infer(self.predictors, self.dependent)
+        wta2.fit_infer(self.predictors, self.dependent)
+
+        np.testing.assert_allclose(wta1.weights_, wta2.weights_)
+
+    def test_constructor_copies_weight_schedule(self):
+        schedule = self.rate * np.ones(self.n_samples)
+        wta = BioWTARegressor(self.n_models, self.n_features, rate_weights=schedule)
+
+        schedule[:] = 0
+        wta.fit_infer(self.predictors, self.dependent)
+
+        np.testing.assert_allclose(wta.weights_, self.wta_full.weights_)
+
+
+class TestBioWTARegressorCallableLearningRate(unittest.TestCase):
+    def test_callable_rate_works_like_vector(self):
+        n_models = 3
+        n_features = 4
+
+        rng = np.random.default_rng(1)
+        n_samples = 55
+        predictors = rng.normal(size=(n_samples, n_features))
+        dependent = rng.normal(size=n_samples)
+
+        def rate_fct(i):
+            return 1 / (1 + 0.5 * i)
+
+        wta1 = BioWTARegressor(n_models, n_features, rate_weights=rate_fct)
+
+        schedule = [rate_fct(_) for _ in range(n_samples)]
+        wta2 = BioWTARegressor(n_models, n_features, rate_weights=schedule)
+
+        wta1.fit_infer(predictors, dependent)
+        wta2.fit_infer(predictors, dependent)
+
+        np.testing.assert_allclose(wta1.weights_, wta2.weights_)
+
+    def test_callable_rate_works_like_constant(self):
+        n_models = 3
+        n_features = 4
+
+        rng = np.random.default_rng(2)
+        n_samples = 55
+        predictors = rng.normal(size=(n_samples, n_features))
+        dependent = rng.normal(size=n_samples)
+
+        rate = 1e-4
+
+        def rate_fct(_):
+            return rate
+
+        wta1 = BioWTARegressor(n_models, n_features, rate_weights=rate_fct)
+        wta2 = BioWTARegressor(n_models, n_features, rate_weights=rate)
+
+        wta1.fit_infer(predictors, dependent)
+        wta2.fit_infer(predictors, dependent)
+
+        np.testing.assert_allclose(wta1.weights_, wta2.weights_)
+
+
 if __name__ == "__main__":
     unittest.main()
