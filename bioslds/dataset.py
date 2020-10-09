@@ -35,7 +35,7 @@ class SwitchingSignal:
         return f"SwitchingSignal(y={self.y}, u={self.u}, usage_seq={self.usage_seq})"
 
 
-class RandomArmaDataset(object):
+class RandomArmaDataset(Sequence[SwitchingSignal]):
     """ Generate random Arma datasets on demand.
 
     This acts like an iterable, allowing sequential or random access to randomly-
