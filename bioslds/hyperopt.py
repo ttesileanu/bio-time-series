@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from typing import Callable, Optional, Union
+from typing import Callable, Optional, Union, Tuple
 
 
 def random_maximize(
@@ -11,7 +11,7 @@ def random_maximize(
     n_iter: int,
     rng: Union[int, np.random.Generator, np.random.RandomState] = 0,
     progress: Optional[Callable] = None,
-):
+) -> Tuple[float, dict, dict]:
     """ Evaluate a function at a set of randomly generated parameter values, finding the
     parameters yielding the maximum value.
 
