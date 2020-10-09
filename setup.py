@@ -15,5 +15,6 @@ setup(
         "matplotlib",
         "seaborn",
         "tqdm",
+        "sklearn",
     ],
 )
