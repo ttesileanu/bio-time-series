@@ -16,5 +16,6 @@ setup(
         "seaborn",
         "tqdm",
         "sklearn",
+        "h5py",
     ],
 )
