@@ -31,3 +31,37 @@ def write_dict_hierarchy(group: h5py.Group, d: dict, scalars_as_attribs: bool = 
                 group.create_dataset(key, data=np.atleast_1d(value))
             else:
                 group.attrs.create(key, value)
+
+
+def read_dict_hierarchy(group: h5py.Group) -> dict:
+    """ Recurse through an HDF's group structure, and return it as a nested dictionary.
+
+    This is the converse to `write_dict_hierarchy`. The roundtrip is not perfect: all
+    sequences are returned as Numpy arrays.
+
+    The group's attributes are also stored in the dictionary. If an attribute name
+    conflicts with a dataset's name, it is prefixed by "attr_". If this prefixed version
+    of the name also conflicts, it is ignored.
+
+    Parameters
+    ----------
+    group
+        HDF group from where to read.
+
+    Returns a nested dictionary with the contents of the HDF group.
+    """
+    d = {}
+    for key in group.keys():
+        value = group[key]
+        if not isinstance(value, h5py.Group):
+            d[key] = value[()]
+        else:
+            d[key] = read_dict_hierarchy(value)
+
+    for key in group.attrs.keys():
+        if key not in d:
+            d[key] = group.attrs[key]
+        else:
+            d["attr_" + key] = group.attrs[key]
+
+    return d
