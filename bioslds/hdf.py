@@ -163,3 +163,48 @@ def write_object_hierarchy(
         else:
             sub_group = group.create_group(attrib_name)
             write_object_hierarchy(sub_group, attrib)
+
+
+def read_namespace_hierarchy(group: h5py.Group) -> SimpleNamespace:
+    """ Recurse through an HDF's group structure, and return it as a nested namespace.
+
+    This acts as a converse to `write_object_hierarchy`. While it does not attempt to
+    create instances of the appropriate objects (beyond `dict` -- see below), it should
+    return a hierarchy that can be accessed in the same way as the original object did
+    before saving to HDF.
+
+    The group's attributes are also stored in the namespace. If an attribute name
+    conflicts with a dataset's name, it is prefixed by "attr_". If this prefixed version
+    of the name also conflicts, it is ignored.
+
+    The function looks for an attribute "_type" in every group. If this is the string
+    "dict", that group is loaded as a `dict` instead of a namespace.
+
+    Parameters
+    ----------
+    group
+        HDF group from where to read.
+
+    Returns a nested `SimpleNamespace` with the contents of the HDF group.
+    """
+    d = SimpleNamespace()
+    for key in group.keys():
+        value = group[key]
+        if not isinstance(value, h5py.Group):
+            value = value[()]
+            if np.issubdtype(value.dtype, np.string_) and len(value) == 1:
+                value = value[0].decode()
+            setattr(d, key, value)
+        else:
+            setattr(d, key, read_namespace_hierarchy(value))
+
+    for key in group.attrs.keys():
+        value = group.attrs[key]
+        if isinstance(value, bytes):
+            value = value.decode()
+        if not hasattr(d, key):
+            setattr(d, key, value)
+        else:
+            setattr(d, "attr_" + key, value)
+
+    return d

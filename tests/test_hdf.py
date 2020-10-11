@@ -7,7 +7,7 @@ import numpy as np
 from types import SimpleNamespace
 
 from bioslds.hdf import write_dict_hierarchy, read_dict_hierarchy
-from bioslds.hdf import write_object_hierarchy
+from bioslds.hdf import write_object_hierarchy, read_namespace_hierarchy
 
 
 class TestWriteDictHierarchy(unittest.TestCase):
@@ -158,7 +158,7 @@ class TestReadDictHierarchy(unittest.TestCase):
             self.assertIn("dict", d)
 
             self.assertIn("subfoo", d["dict"])
-            np.testing.assert_allclose(f["dict/subfoo"][()], subfoo)
+            np.testing.assert_allclose(d["dict"]["subfoo"], subfoo)
 
 
 class TestWriteReadDictHierarchyRoundtrip(unittest.TestCase):
@@ -372,6 +372,87 @@ class TestWriteObjectHierarchyInaccessibleAttribute(unittest.TestCase):
         with h5py.File(fname, "r") as f:
             self.assertIn("foo", f)
             self.assertNotIn("bar", f)
+
+
+class TestReadNamespaceHierarchy(unittest.TestCase):
+    def test_read_flat(self):
+        d_exp = {"foo": np.array([-0.1, 5]), "bar": [1, 0.2, -3]}
+        fname = "test_read_flat.hdf5"
+        with h5py.File(fname, "w") as f:
+            f.create_dataset("foo", data=d_exp["foo"])
+            f.create_dataset("bar", data=d_exp["bar"])
+
+        with h5py.File(fname, "r") as f:
+            d = read_namespace_hierarchy(f)
+
+            self.assertTrue(hasattr(d, "foo"))
+            self.assertTrue(hasattr(d, "bar"))
+
+            np.testing.assert_allclose(d.foo, d_exp["foo"])
+            np.testing.assert_allclose(d.bar, d_exp["bar"])
+
+    def test_read_attribs_as_scalars(self):
+        d_exp = {"foo": 3}
+        fname = "test_read_scalar_attribs.hdf5"
+        with h5py.File(fname, "w") as f:
+            f.attrs.create("foo", d_exp["foo"])
+
+        with h5py.File(fname, "r") as f:
+            d = read_namespace_hierarchy(f)
+
+            self.assertTrue(hasattr(d, "foo"))
+            self.assertAlmostEqual(d.foo, d_exp["foo"])
+
+    def test_conflict_dataset_name_and_attrib_name(self):
+        foo = [1, 2, 3]
+        attr_foo = -3.5
+        fname = "test_read_scalar_attribs_conflict.hdf5"
+        with h5py.File(fname, "w") as f:
+            f.create_dataset("foo", data=foo)
+            f.attrs.create("foo", attr_foo)
+
+        with h5py.File(fname, "r") as f:
+            d = read_namespace_hierarchy(f)
+
+            self.assertTrue(hasattr(d, "foo"))
+            np.testing.assert_allclose(d.foo, foo)
+
+            self.assertTrue(hasattr(d, "attr_foo"))
+            self.assertAlmostEqual(d.attr_foo, attr_foo)
+
+    def test_conflict_attrib_name_with_dataset_name_with_and_without_attr(self):
+        foo = [1, 2, 3]
+        dataset_attr_foo = [2, 3, 1]
+        attr_foo = -3.5
+        fname = "test_read_scalar_attribs_conflict.hdf5"
+        with h5py.File(fname, "w") as f:
+            f.create_dataset("foo", data=foo)
+            f.create_dataset("attr_foo", data=dataset_attr_foo)
+            f.attrs.create("foo", attr_foo)
+
+        with h5py.File(fname, "r") as f:
+            d = read_namespace_hierarchy(f)
+
+            self.assertTrue(hasattr(d, "attr_foo"))
+            self.assertAlmostEqual(d.attr_foo, attr_foo)
+
+    def test_hierarchy(self):
+        foo = [1, 2, 0.5]
+        subfoo = [3, 2, 1]
+        fname = "test_read_hierarchical.hdf5"
+        with h5py.File(fname, "w") as f:
+            f.create_dataset("foo", data=foo)
+            f_sub = f.create_group("sub")
+            f_sub.create_dataset("subfoo", data=subfoo)
+
+        with h5py.File(fname, "r") as f:
+            d = read_namespace_hierarchy(f)
+
+            self.assertTrue(hasattr(d, "foo"))
+            self.assertTrue(hasattr(d, "sub"))
+
+            self.assertTrue(hasattr(d.sub, "subfoo"))
+            np.testing.assert_allclose(d.sub.subfoo, subfoo)
 
 
 if __name__ == "__main__":
