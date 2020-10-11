@@ -21,6 +21,28 @@ class TestWriteDictHierarchy(unittest.TestCase):
             np.testing.assert_allclose(f["foo"][()], d["foo"])
             np.testing.assert_allclose(f["bar"][()], d["bar"])
 
+    def test_write_string_when_scalars_as_attribs_is_false(self):
+        d = {"foo": "bar"}
+
+        fname = "test_write_str.hdf5"
+        with h5py.File(fname, "w") as f:
+            write_dict_hierarchy(f, d, scalars_as_attribs=False)
+
+        with h5py.File(fname, "r") as f:
+            self.assertIn("foo", f)
+            self.assertEqual(f["foo"][0].decode(), "bar")
+
+    def test_write_string_when_scalars_as_attribs_is_true(self):
+        d = {"foo": "bar"}
+
+        fname = "test_write_str.hdf5"
+        with h5py.File(fname, "w") as f:
+            write_dict_hierarchy(f, d, scalars_as_attribs=True)
+
+        with h5py.File(fname, "r") as f:
+            self.assertIn("foo", f.attrs)
+            self.assertEqual(f.attrs["foo"].decode(), "bar")
+
     def test_scalars_as_attribs_by_default(self):
         d = {"foo": 3}
         fname = "test_write_scalar_attribs.hdf5"
@@ -139,7 +161,12 @@ class TestReadDictHierarchy(unittest.TestCase):
 class TestWriteReadDictHierarchyRoundtrip(unittest.TestCase):
     def setUp(self):
         self.d1 = {"foo": [1, 2, 3], "bar": 0.3}
-        self.d = {"foo": [0.2, 0.3], "bar": [0.1, 0.2, 0.3], "dict": self.d1}
+        self.d = {
+            "foo": [0.2, 0.3],
+            "bar": [0.1, 0.2, 0.3],
+            "foobar": "foobar",
+            "dict": self.d1,
+        }
 
         self.fname = "test_write_read_roundtrip.hdf5"
         with h5py.File(self.fname, "w") as f:
@@ -151,10 +178,12 @@ class TestWriteReadDictHierarchyRoundtrip(unittest.TestCase):
 
         self.assertIn("foo", d)
         self.assertIn("bar", d)
+        self.assertIn("foobar", d)
         self.assertIn("dict", d)
 
         np.testing.assert_allclose(d["foo"], self.d["foo"])
         np.testing.assert_allclose(d["bar"], self.d["bar"])
+        self.assertEqual(d["foobar"], self.d["foobar"])
 
         self.assertIn("foo", d["dict"])
         self.assertIn("bar", d["dict"])
@@ -163,5 +192,39 @@ class TestWriteReadDictHierarchyRoundtrip(unittest.TestCase):
         np.testing.assert_allclose(d["dict"]["bar"], self.d1["bar"])
 
 
-if __name__ == '__main__':
+class TestWriteReadDictHierarchyRoundtripWhenScalarsNotAttribs(unittest.TestCase):
+    def setUp(self):
+        self.d1 = {"foo": [1, 2, 3], "bar": 0.3}
+        self.d = {
+            "foo": [0.2, 0.3],
+            "bar": [0.1, 0.2, 0.3],
+            "foobar": "foobar",
+            "dict": self.d1,
+        }
+
+        self.fname = "test_write_read_roundtrip.hdf5"
+        with h5py.File(self.fname, "w") as f:
+            write_dict_hierarchy(f, self.d, scalars_as_attribs=False)
+
+    def test_read_returns_original_dict_up_to_types(self):
+        with h5py.File(self.fname, "r") as f:
+            d = read_dict_hierarchy(f)
+
+        self.assertIn("foo", d)
+        self.assertIn("bar", d)
+        self.assertIn("foobar", d)
+        self.assertIn("dict", d)
+
+        np.testing.assert_allclose(d["foo"], self.d["foo"])
+        np.testing.assert_allclose(d["bar"], self.d["bar"])
+        self.assertEqual(d["foobar"], self.d["foobar"])
+
+        self.assertIn("foo", d["dict"])
+        self.assertIn("bar", d["dict"])
+
+        np.testing.assert_allclose(d["dict"]["foo"], self.d1["foo"])
+        np.testing.assert_allclose(d["dict"]["bar"], self.d1["bar"])
+
+
+if __name__ == "__main__":
     unittest.main()

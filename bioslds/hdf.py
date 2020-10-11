@@ -4,6 +4,8 @@ import h5py
 
 import numpy as np
 
+from typing import Any
+
 
 def write_dict_hierarchy(group: h5py.Group, d: dict, scalars_as_attribs: bool = True):
     """ Write a nested dictionary structure to an HDF file.
@@ -27,7 +29,11 @@ def write_dict_hierarchy(group: h5py.Group, d: dict, scalars_as_attribs: bool = 
             sub_group = group.create_group(key)
             write_dict_hierarchy(sub_group, value)
         else:
-            if hasattr(value, "__len__") or not scalars_as_attribs:
+            is_seq = hasattr(value, "__len__")
+            is_str = isinstance(value, str)
+            if is_str:
+                value = np.string_(value)
+            if (is_seq and not is_str) or not scalars_as_attribs:
                 group.create_dataset(key, data=np.atleast_1d(value))
             else:
                 group.attrs.create(key, value)
@@ -54,14 +60,20 @@ def read_dict_hierarchy(group: h5py.Group) -> dict:
     for key in group.keys():
         value = group[key]
         if not isinstance(value, h5py.Group):
-            d[key] = value[()]
+            value = value[()]
+            if np.issubdtype(value.dtype, np.string_) and len(value) == 1:
+                value = value[0].decode()
+            d[key] = value
         else:
             d[key] = read_dict_hierarchy(value)
 
     for key in group.attrs.keys():
+        value = group.attrs[key]
+        if isinstance(value, bytes):
+            value = value.decode()
         if key not in d:
-            d[key] = group.attrs[key]
+            d[key] = value
         else:
-            d["attr_" + key] = group.attrs[key]
+            d["attr_" + key] = value
 
     return d
