@@ -4,7 +4,10 @@ import h5py
 
 import numpy as np
 
+from types import SimpleNamespace
+
 from bioslds.hdf import write_dict_hierarchy, read_dict_hierarchy
+from bioslds.hdf import write_object_hierarchy
 
 
 class TestWriteDictHierarchy(unittest.TestCase):
@@ -224,6 +227,151 @@ class TestWriteReadDictHierarchyRoundtripWhenScalarsNotAttribs(unittest.TestCase
 
         np.testing.assert_allclose(d["dict"]["foo"], self.d1["foo"])
         np.testing.assert_allclose(d["dict"]["bar"], self.d1["bar"])
+
+
+class SubObject:
+    def __init__(self, foobar):
+        self.foobar = foobar
+        self._bar = [1, 2]
+        self.d = {"foobar": foobar}
+
+
+class AnObject:
+    def __init__(self, foo, bar, sub):
+        self.foo = foo
+        self.bar = bar
+        self._foo = [5, 4]
+        self.sub = sub
+
+    def fct(self):
+        pass
+
+
+class TestWriteObjectHierarchyWhenScalarsNotAttribs(unittest.TestCase):
+    def setUp(self):
+        self.sub_obj = SubObject([3.5, -0.5])
+        self.obj = AnObject("bar", 5.2, self.sub_obj)
+        self.fname = "test_obj_write.hdf5"
+
+        with h5py.File(self.fname, "w") as f:
+            write_object_hierarchy(f, self.obj, scalars_as_attribs=False)
+
+    def test_structure_is_correct(self):
+        with h5py.File(self.fname, "r") as f:
+            self.assertIn("foo", f)
+            self.assertIn("bar", f)
+            self.assertIn("sub", f)
+            self.assertNotIn("_foo", f)
+            self.assertNotIn("fct", f)
+
+            g = f["sub"]
+            self.assertIn("foobar", g)
+            self.assertIn("d", g)
+            self.assertNotIn("_bar", g)
+
+            h = g["d"]
+            self.assertIn("foobar", h)
+
+    def test_type_attributes_first_level(self):
+        with h5py.File(self.fname, "r") as f:
+            self.assertIn("_type", f.attrs)
+            self.assertEqual(f.attrs["_type"].decode(), str(type(self.obj)))
+
+    def test_type_attributes_second_level(self):
+        with h5py.File(self.fname, "r") as f:
+            g = f["sub"]
+            self.assertIn("_type", g.attrs)
+            self.assertEqual(g.attrs["_type"].decode(), str(type(self.sub_obj)))
+
+    def test_type_attributes_dict(self):
+        with h5py.File(self.fname, "r") as f:
+            h = f["sub/d"]
+            self.assertIn("_type", h.attrs)
+            self.assertEqual(h.attrs["_type"].decode(), "dict")
+
+    def test_first_level_values_are_correct(self):
+        with h5py.File(self.fname, "r") as f:
+            self.assertEqual(f["foo"][0].decode(), self.obj.foo)
+            np.testing.assert_allclose(f["bar"][()], self.obj.bar)
+
+    def test_second_level_values_are_correct(self):
+        with h5py.File(self.fname, "r") as f:
+            np.testing.assert_allclose(f["sub/foobar"], self.sub_obj.foobar)
+
+    def test_dict_values_are_correct(self):
+        with h5py.File(self.fname, "r") as f:
+            np.testing.assert_allclose(f["sub/d/foobar"], self.sub_obj.foobar)
+
+
+class TestWriteObjectHierarchySimpleNamespaceWhenScalarsAreAttribs(unittest.TestCase):
+    def setUp(self):
+        self.obj = SimpleNamespace(foo="foo", sub=SimpleNamespace(bar=5.2))
+        self.fname = "test_obj_write.hdf5"
+
+        with h5py.File(self.fname, "w") as f:
+            write_object_hierarchy(f, self.obj, scalars_as_attribs=True)
+
+    def test_structure_is_correct(self):
+        with h5py.File(self.fname, "r") as f:
+            self.assertNotIn("foo", f)
+            self.assertIn("foo", f.attrs)
+            self.assertIn("sub", f)
+
+            g = f["sub"]
+            self.assertNotIn("bar", g)
+            self.assertIn("bar", g.attrs)
+
+    def test_first_level_values_are_correct(self):
+        with h5py.File(self.fname, "r") as f:
+            self.assertEqual(f.attrs["foo"].decode(), self.obj.foo)
+
+    def test_second_level_values_are_correct(self):
+        with h5py.File(self.fname, "r") as f:
+            np.testing.assert_allclose(f["sub"].attrs["bar"], self.obj.sub.bar)
+
+
+class TestWriteObjectHierarchyDefaultScalarsAsAttribs(unittest.TestCase):
+    def test_default_scalars_as_attribs_is_true(self):
+        fname = "test_obj_write.hdf5"
+        with h5py.File(fname, "w") as f:
+            write_object_hierarchy(f, SimpleNamespace(foo=3.5))
+
+        with h5py.File(fname, "r") as f:
+            self.assertNotIn("foo", f)
+            self.assertIn("foo", f.attrs)
+
+
+class TestWriteObjectHierarchyBoolArray(unittest.TestCase):
+    def test_writing_bool_array_works(self):
+        foo = [True, False, False, True]
+
+        fname = "test_obj_write_bool.hdf5"
+        with h5py.File(fname, "w") as f:
+            write_object_hierarchy(f, SimpleNamespace(foo=foo))
+
+        with h5py.File(fname, "r") as f:
+            self.assertIn("foo", f)
+            np.testing.assert_allclose(f["foo"][()], foo)
+
+
+class TestWriteObjectHierarchyInaccessibleAttribute(unittest.TestCase):
+    def test_silently_ignores_inaccessible_attributes(self):
+        class AnotherObject:
+            def __init__(self):
+                self.foo = [1, 2, 3]
+
+            @property
+            def bar(self):
+                raise KeyError
+
+        obj = AnotherObject()
+        fname = "test_obj_write_skip_inaccessible.hdf5"
+        with h5py.File(fname, "w") as f:
+            write_object_hierarchy(f, obj)
+
+        with h5py.File(fname, "r") as f:
+            self.assertIn("foo", f)
+            self.assertNotIn("bar", f)
 
 
 if __name__ == "__main__":

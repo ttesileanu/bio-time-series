@@ -2,8 +2,11 @@
 
 import h5py
 
+import numbers
+
 import numpy as np
 
+from types import SimpleNamespace
 from typing import Any
 
 
@@ -77,3 +80,86 @@ def read_dict_hierarchy(group: h5py.Group) -> dict:
             d["attr_" + key] = value
 
     return d
+
+
+def write_object_hierarchy(
+    group: h5py.Group, obj: Any, scalars_as_attribs: bool = True
+):
+    """ Write an object with all its sub-objects to an HDF file.
+
+    This first skips all attributes that start with an underscore or that are callable.
+    It then writes as datasets all attributes that are either numbers, strings, lists,
+    or Numpy arrays. Instances of `dict` are treating in a special way: its keys are
+    treated as attribute names and its values are treated as attributes. The function
+    then recursively goes through sub-objects to store those as well. The object's
+    `type` is stored as a string attribute called "_type".
+
+    Because of the dynamic way in which Python processes attribute access, it is
+    entirely possible that accessing an attribute is a non-trivial operation that could
+    even fail. For example, trying to access the `cffi` attribute of an
+    `np.BitGenerator` can raise `ImportError`. For this reason, in this function we
+    catch any exceptions raised while accessing an attribute, and silently ignore the
+    attributes that fail to be accessed.
+
+    Parameters
+    ----------
+    group
+        HDF group where to save the data.
+    obj
+        The object to save.
+    scalars_as_attribs
+        Single numbers are stored as attributes.
+    """
+    if isinstance(obj, dict):
+        is_dict = True
+        attrib_names = obj.keys()
+        group.attrs.create("_type", np.string_("dict"))
+    else:
+        is_dict = False
+        attrib_names = dir(obj)
+        group.attrs.create("_type", np.string_(str(type(obj))))
+
+    for attrib_name in attrib_names:
+        if attrib_name.startswith("_"):
+            continue
+
+        if not is_dict:
+            # noinspection PyBroadException
+            try:
+                attrib = getattr(obj, attrib_name)
+            except Exception:
+                continue
+        else:
+            attrib = obj[attrib_name]
+        if callable(attrib):
+            continue
+
+        is_str = isinstance(attrib, str)
+        is_seq = False
+        is_scalar = False
+        if is_str:
+            is_scalar = True
+            attrib = np.string_(attrib)
+        else:
+            is_seq = hasattr(attrib, "__len__")
+            if is_seq:
+                attrib_arr = np.asarray(attrib)
+                is_numeric = np.issubdtype(attrib_arr.dtype, np.number)
+                is_bool = np.issubdtype(attrib_arr.dtype, np.bool_)
+                if not is_numeric and not is_bool:
+                    is_seq = False
+                else:
+                    attrib = attrib_arr
+            else:
+                if isinstance(attrib, numbers.Number):
+                    is_scalar = True
+
+        is_sub_obj = not(is_seq or is_scalar)
+        if not is_sub_obj:
+            if not is_scalar or not scalars_as_attribs:
+                group.create_dataset(attrib_name, data=np.atleast_1d(attrib))
+            else:
+                group.attrs.create(attrib_name, attrib)
+        else:
+            sub_group = group.create_group(attrib_name)
+            write_object_hierarchy(sub_group, attrib)
