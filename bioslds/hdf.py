@@ -141,7 +141,7 @@ def write_object_hierarchy(
             is_scalar = True
             attrib = np.string_(attrib)
         else:
-            is_seq = hasattr(attrib, "__len__")
+            is_seq = isinstance(attrib, (list, np.ndarray))
             if is_seq:
                 attrib_arr = np.asarray(attrib)
                 is_numeric = np.issubdtype(attrib_arr.dtype, np.number)

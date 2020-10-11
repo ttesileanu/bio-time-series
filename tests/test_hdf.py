@@ -374,6 +374,29 @@ class TestWriteObjectHierarchyInaccessibleAttribute(unittest.TestCase):
             self.assertNotIn("bar", f)
 
 
+class TestWriteObjectHierarchyNonListOrNumpyArraySequence(unittest.TestCase):
+    def test_non_list_or_array_sequence_is_written_as_object(self):
+        class NonStdSequence:
+            def __len__(self) -> int:
+                return 2
+
+            def __getitem__(self, item: int) -> int:
+                if item < 2:
+                    return 0
+                else:
+                    raise IndexError()
+
+        obj = SimpleNamespace(sub=NonStdSequence())
+
+        fname = "test_obj_write_non_std_seq.hdf5"
+        with h5py.File(fname, "w") as f:
+            write_object_hierarchy(f, obj)
+
+        with h5py.File(fname, "r") as f:
+            self.assertIn("sub", f)
+            self.assertTrue(isinstance(f["sub"], h5py.Group))
+
+
 class TestReadNamespaceHierarchy(unittest.TestCase):
     def test_read_flat(self):
         d_exp = {"foo": np.array([-0.1, 5]), "bar": [1, 0.2, -3]}
