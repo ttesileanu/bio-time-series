@@ -83,20 +83,38 @@ def read_dict_hierarchy(group: h5py.Group) -> dict:
 
 
 def write_object_hierarchy(
-    group: h5py.Group, obj: Any, scalars_as_attribs: bool = True
+    group: h5py.Group, obj: Any
 ):
     """ Write an object with all its sub-objects to an HDF file.
 
     This first skips all attributes that start with an underscore or that are callable.
-    It then writes as datasets all attributes that are either numbers, strings, lists,
-    or Numpy arrays. Instances of `dict` are treating in a special way: its keys are
-    treated as attribute names and its values are treated as attributes. The function
-    then recursively goes through sub-objects to store those as well. The object's
-    `type` is stored as a string attribute called "_type".
+    It then writes as datasets all attributes that are either numbers, strings, or
+    numeric Numpy arrays (including boolean). Scalars -- numbers and strings -- are
+    stored as `h5py` attributes. Non-numeric Numpy arrays are stored as lists (see
+    below). Everything that is not a scalar is stored as either a dataset or a group.
+    The function recursively goes through object attributes, writing them to file in a
+    hierarchical fashion.
+
+    The following types are treated in a special way:
+    1. Instances of `tuple` or `list`. Each item is stored using a name of the form
+       "_idx", and a special attribute called "_special_type" is set to "tuple" or
+       "list", respectively. A special attribute called "_len" is set to the number of
+       elements.
+    2. Instances of `dict`. This is stored as a list of tuples containing the
+       dictionary's items (that is, `list(d.items())`). The "_special_type" is set to
+       "dict".
+    3. Sequences, identified either by an iterable interface (i.e., has an `__iter__`
+       method) or by a random-access interface based on `__getitem__`. These are stored
+       as lists.
+    In each of the cases above, any additional non-callable attributes that do not start
+    with an underscore are also stored.
+
+    In all cases, the string representation of the object's Python `type` is stored as a
+    string attribute called "_type".
 
     Because of the dynamic way in which Python processes attribute access, it is
     entirely possible that accessing an attribute is a non-trivial operation that could
-    even fail. For example, trying to access the `cffi` attribute of an
+    even potentially fail. For example, trying to access the `cffi` attribute of an
     `np.BitGenerator` can raise `ImportError`. For this reason, in this function we
     catch any exceptions raised while accessing an attribute, and silently ignore the
     attributes that fail to be accessed.
@@ -107,62 +125,92 @@ def write_object_hierarchy(
         HDF group where to save the data.
     obj
         The object to save.
-    scalars_as_attribs
-        Single numbers are stored as attributes.
     """
+    # store dictionaries as lists of (key, value) pairs
     if isinstance(obj, dict):
-        is_dict = True
-        attrib_names = obj.keys()
-        group.attrs.create("_type", np.string_("dict"))
-    else:
-        is_dict = False
-        attrib_names = dir(obj)
-        group.attrs.create("_type", np.string_(str(type(obj))))
+        write_object_hierarchy(group, list(obj.items()))
+
+        # but ensure that the type indicates that this was a dict
+        group.attrs.create("_special_type", "dict")
+        group.attrs.create("_type", str(type(obj)))
+
+        return
+
+    # store the object's type
+    group.attrs.create("_type", str(type(obj)))
+
+    # get the non-private attributes
+    attrib_names = [_ for _ in dir(obj) if not _.startswith("_")]
+
+    # ...but add some special and dummy attributes for sequences
+    is_seq = hasattr(obj, "__getitem__")
+    is_iter = hasattr(obj, "__iter__")
+    elem_list = None
+    if is_seq or is_iter:
+        # store a special type, and the sequence length
+        special_type = "list"
+        if isinstance(obj, tuple):
+            special_type = "tuple"
+        elif isinstance(obj, set):
+            special_type = "set"
+
+        group.attrs.create("_special_type", special_type)
+        if not is_seq or not hasattr(obj, "__len__"):
+            elem_list = [_ for _ in obj]
+
+        if elem_list is None:
+            n = len(obj)
+        else:
+            n = len(elem_list)
+
+        group.attrs.create("_len", n)
+
+        # add attributes for each element
+        attrib_names.extend(f"_{_}" for _ in range(n))
 
     for attrib_name in attrib_names:
         if attrib_name.startswith("_"):
-            continue
-
-        if not is_dict:
+            # handle the special attributes for sequences
+            idx = int(attrib_name[1:])
+            crt_obj = obj if is_seq else elem_list
+            # noinspection PyBroadException
+            try:
+                attrib = crt_obj[idx]
+            except Exception:
+                # bail out if getitem fails for any reason
+                continue
+        else:
+            # otherwise get attribute value
             # noinspection PyBroadException
             try:
                 attrib = getattr(obj, attrib_name)
             except Exception:
+                # bail out if getattr fails for any reason
                 continue
-        else:
-            attrib = obj[attrib_name]
+
+        # skip callable attributes
         if callable(attrib):
             continue
 
-        is_str = isinstance(attrib, str)
-        is_seq = False
-        is_scalar = False
-        if is_str:
-            is_scalar = True
-            attrib = np.string_(attrib)
+        # store single numbers or strings as attributes
+        if isinstance(attrib, numbers.Number) or isinstance(attrib, str):
+            group.attrs.create(attrib_name, attrib)
         else:
-            is_seq = isinstance(attrib, (list, np.ndarray))
-            if is_seq:
-                attrib_arr = np.asarray(attrib)
-                is_numeric = np.issubdtype(attrib_arr.dtype, np.number)
-                is_bool = np.issubdtype(attrib_arr.dtype, np.bool_)
-                if not is_numeric and not is_bool:
-                    is_seq = False
-                else:
-                    attrib = attrib_arr
-            else:
-                if isinstance(attrib, numbers.Number):
-                    is_scalar = True
-
-        is_sub_obj = not(is_seq or is_scalar)
-        if not is_sub_obj:
-            if not is_scalar or not scalars_as_attribs:
+            # store numeric Numpy arrays (including boolean) as datasets
+            is_array = isinstance(attrib, np.ndarray)
+            is_number_array = is_array and np.issubdtype(attrib.dtype, np.number)
+            is_bool_array = is_array and np.issubdtype(attrib.dtype, np.bool_)
+            if is_number_array or is_bool_array:
                 group.create_dataset(attrib_name, data=np.atleast_1d(attrib))
             else:
-                group.attrs.create(attrib_name, attrib)
-        else:
-            sub_group = group.create_group(attrib_name)
-            write_object_hierarchy(sub_group, attrib)
+                # store everything else as a sub-object
+
+                # in particular, store non-numeric Numpy arrays as lists
+                if is_array:
+                    attrib = list(attrib)
+
+                sub_group = group.create_group(attrib_name)
+                write_object_hierarchy(sub_group, attrib)
 
 
 def read_namespace_hierarchy(group: h5py.Group) -> SimpleNamespace:
@@ -193,7 +241,7 @@ def read_namespace_hierarchy(group: h5py.Group) -> SimpleNamespace:
         if not isinstance(value, h5py.Group):
             value = value[()]
             if np.issubdtype(value.dtype, np.string_) and len(value) == 1:
-                value = value[0].decode()
+                value = value[0]
             setattr(d, key, value)
         else:
             setattr(d, key, read_namespace_hierarchy(value))

@@ -247,20 +247,26 @@ class AnObject:
         pass
 
 
-class TestWriteObjectHierarchyWhenScalarsNotAttribs(unittest.TestCase):
+class TestWriteObjectHierarchyGeneric(unittest.TestCase):
     def setUp(self):
-        self.sub_obj = SubObject([3.5, -0.5])
+        self.sub_obj = SubObject(np.array([3.5, -0.5]))
         self.obj = AnObject("bar", 5.2, self.sub_obj)
         self.fname = "test_obj_write.hdf5"
 
         with h5py.File(self.fname, "w") as f:
-            write_object_hierarchy(f, self.obj, scalars_as_attribs=False)
+            write_object_hierarchy(f, self.obj)
 
     def test_structure_is_correct(self):
         with h5py.File(self.fname, "r") as f:
-            self.assertIn("foo", f)
-            self.assertIn("bar", f)
+            # scalars are written as attributes
+            self.assertNotIn("foo", f)
+            self.assertNotIn("bar", f)
+
+            self.assertIn("foo", f.attrs)
+            self.assertIn("bar", f.attrs)
             self.assertIn("sub", f)
+
+            # private and callable attributes aren't written
             self.assertNotIn("_foo", f)
             self.assertNotIn("fct", f)
 
@@ -270,29 +276,47 @@ class TestWriteObjectHierarchyWhenScalarsNotAttribs(unittest.TestCase):
             self.assertNotIn("_bar", g)
 
             h = g["d"]
-            self.assertIn("foobar", h)
+            self.assertIn("_0", h)
+            self.assertIn("_len", h.attrs)
+
+            k = h["_0"]
+            self.assertIn("_0", k.attrs)
+            self.assertIn("_1", k)
+            self.assertIn("_len", k.attrs)
 
     def test_type_attributes_first_level(self):
         with h5py.File(self.fname, "r") as f:
             self.assertIn("_type", f.attrs)
-            self.assertEqual(f.attrs["_type"].decode(), str(type(self.obj)))
+            self.assertEqual(f.attrs["_type"], str(type(self.obj)))
 
     def test_type_attributes_second_level(self):
         with h5py.File(self.fname, "r") as f:
             g = f["sub"]
             self.assertIn("_type", g.attrs)
-            self.assertEqual(g.attrs["_type"].decode(), str(type(self.sub_obj)))
+            self.assertEqual(g.attrs["_type"], str(type(self.sub_obj)))
 
-    def test_type_attributes_dict(self):
+    def test_type_attribute_dict(self):
         with h5py.File(self.fname, "r") as f:
             h = f["sub/d"]
             self.assertIn("_type", h.attrs)
-            self.assertEqual(h.attrs["_type"].decode(), "dict")
+            self.assertEqual(h.attrs["_type"], str(dict))
+
+    def test_special_type_attribute_dict(self):
+        with h5py.File(self.fname, "r") as f:
+            h = f["sub/d"]
+            self.assertIn("_type", h.attrs)
+            self.assertEqual(h.attrs["_special_type"], "dict")
+
+    def test_special_type_attribute_dict_elem(self):
+        with h5py.File(self.fname, "r") as f:
+            h = f["sub/d/_0"]
+            self.assertIn("_type", h.attrs)
+            self.assertEqual(h.attrs["_special_type"], "tuple")
 
     def test_first_level_values_are_correct(self):
         with h5py.File(self.fname, "r") as f:
-            self.assertEqual(f["foo"][0].decode(), self.obj.foo)
-            np.testing.assert_allclose(f["bar"][()], self.obj.bar)
+            self.assertEqual(f.attrs["foo"], self.obj.foo)
+            np.testing.assert_allclose(f.attrs["bar"], self.obj.bar)
 
     def test_second_level_values_are_correct(self):
         with h5py.File(self.fname, "r") as f:
@@ -300,50 +324,13 @@ class TestWriteObjectHierarchyWhenScalarsNotAttribs(unittest.TestCase):
 
     def test_dict_values_are_correct(self):
         with h5py.File(self.fname, "r") as f:
-            np.testing.assert_allclose(f["sub/d/foobar"], self.sub_obj.foobar)
-
-
-class TestWriteObjectHierarchySimpleNamespaceWhenScalarsAreAttribs(unittest.TestCase):
-    def setUp(self):
-        self.obj = SimpleNamespace(foo="foo", sub=SimpleNamespace(bar=5.2))
-        self.fname = "test_obj_write.hdf5"
-
-        with h5py.File(self.fname, "w") as f:
-            write_object_hierarchy(f, self.obj, scalars_as_attribs=True)
-
-    def test_structure_is_correct(self):
-        with h5py.File(self.fname, "r") as f:
-            self.assertNotIn("foo", f)
-            self.assertIn("foo", f.attrs)
-            self.assertIn("sub", f)
-
-            g = f["sub"]
-            self.assertNotIn("bar", g)
-            self.assertIn("bar", g.attrs)
-
-    def test_first_level_values_are_correct(self):
-        with h5py.File(self.fname, "r") as f:
-            self.assertEqual(f.attrs["foo"].decode(), self.obj.foo)
-
-    def test_second_level_values_are_correct(self):
-        with h5py.File(self.fname, "r") as f:
-            np.testing.assert_allclose(f["sub"].attrs["bar"], self.obj.sub.bar)
-
-
-class TestWriteObjectHierarchyDefaultScalarsAsAttribs(unittest.TestCase):
-    def test_default_scalars_as_attribs_is_true(self):
-        fname = "test_obj_write.hdf5"
-        with h5py.File(fname, "w") as f:
-            write_object_hierarchy(f, SimpleNamespace(foo=3.5))
-
-        with h5py.File(fname, "r") as f:
-            self.assertNotIn("foo", f)
-            self.assertIn("foo", f.attrs)
+            self.assertEqual(f["sub/d/_0/"].attrs["_0"], "foobar")
+            np.testing.assert_allclose(f["sub/d/_0/_1"], self.sub_obj.foobar)
 
 
 class TestWriteObjectHierarchyBoolArray(unittest.TestCase):
     def test_writing_bool_array_works(self):
-        foo = [True, False, False, True]
+        foo = np.array([True, False, False, True])
 
         fname = "test_obj_write_bool.hdf5"
         with h5py.File(fname, "w") as f:
@@ -352,6 +339,20 @@ class TestWriteObjectHierarchyBoolArray(unittest.TestCase):
         with h5py.File(fname, "r") as f:
             self.assertIn("foo", f)
             np.testing.assert_allclose(f["foo"][()], foo)
+
+
+class TestWriteObjectHierarchyNonNumericNumpyArrayAsLists(unittest.TestCase):
+    def test_writing_non_numeric_array_yields_list(self):
+        foo = np.array([None, (2, 3), 0.3], dtype=object)
+
+        fname = "test_obj_write_non_numeric_array.hdf5"
+        with h5py.File(fname, "w") as f:
+            write_object_hierarchy(f, SimpleNamespace(foo=foo))
+
+        with h5py.File(fname, "r") as f:
+            self.assertIn("foo", f)
+            self.assertTrue(isinstance(f["foo"], h5py.Group))
+            self.assertEqual(f["foo"].attrs["_len"], len(foo))
 
 
 class TestWriteObjectHierarchyInaccessibleAttribute(unittest.TestCase):
@@ -374,27 +375,220 @@ class TestWriteObjectHierarchyInaccessibleAttribute(unittest.TestCase):
             self.assertNotIn("bar", f)
 
 
-class TestWriteObjectHierarchyNonListOrNumpyArraySequence(unittest.TestCase):
-    def test_non_list_or_array_sequence_is_written_as_object(self):
+class TestWriteObjectHierarchyNonStandardSequenceWithoutLen(unittest.TestCase):
+    def setUp(self):
         class NonStdSequence:
-            def __len__(self) -> int:
-                return 2
+            def __init__(self):
+                self.length = 2
 
             def __getitem__(self, item: int) -> int:
-                if item < 2:
-                    return 0
+                if item < self.length:
+                    return item ** 2
                 else:
                     raise IndexError()
 
-        obj = SimpleNamespace(sub=NonStdSequence())
+        self.obj = SimpleNamespace(sub=NonStdSequence())
 
-        fname = "test_obj_write_non_std_seq.hdf5"
-        with h5py.File(fname, "w") as f:
-            write_object_hierarchy(f, obj)
+        self.fname = "test_obj_write_non_std_seq.hdf5"
+        with h5py.File(self.fname, "w") as f:
+            write_object_hierarchy(f, self.obj)
 
-        with h5py.File(fname, "r") as f:
+    def test_nonstandard_sequence_written_as_group(self):
+        with h5py.File(self.fname, "r") as f:
             self.assertIn("sub", f)
             self.assertTrue(isinstance(f["sub"], h5py.Group))
+
+    def test_nonstandard_sequence_has_list_special_type(self):
+        with h5py.File(self.fname, "r") as f:
+            self.assertEqual(f["sub"].attrs["_special_type"], "list")
+
+    def test_nonstandard_sequence_has_correct_length(self):
+        with h5py.File(self.fname, "r") as f:
+            self.assertEqual(f["sub"].attrs["_len"], self.obj.sub.length)
+
+    def test_nonstandard_sequence_has_correct_elements(self):
+        with h5py.File(self.fname, "r") as f:
+            for i, x in enumerate(self.obj.sub):
+                self.assertAlmostEqual(f["sub"].attrs[f"_{i}"], x)
+
+
+class TestWriteObjectHierarchyNonStandardSequenceWithLen(unittest.TestCase):
+    def setUp(self):
+        class NonStdSequence:
+            def __len__(self):
+                return 2
+
+            def __getitem__(self, item: int) -> int:
+                if item < len(self):
+                    return item ** 2
+                else:
+                    raise IndexError()
+
+        self.obj = SimpleNamespace(sub=NonStdSequence())
+
+        self.fname = "test_obj_write_non_std_seq.hdf5"
+        with h5py.File(self.fname, "w") as f:
+            write_object_hierarchy(f, self.obj)
+
+    def test_nonstandard_sequence_has_correct_length(self):
+        with h5py.File(self.fname, "r") as f:
+            self.assertEqual(f["sub"].attrs["_len"], len(self.obj.sub))
+
+
+class TestWriteObjectHierarchyNonStandardIterable(unittest.TestCase):
+    def setUp(self):
+        class NonStdSequence:
+            def __iter__(self):
+                return NonStdIterator(self)
+
+        class NonStdIterator:
+            def __init__(self, obj):
+                self._obj = obj
+                self._idx = 0
+
+            def __next__(self):
+                if self._idx < 3:
+                    value = self._idx ** 3
+                    self._idx += 1
+                    return value
+                else:
+                    raise StopIteration
+
+        self.obj = SimpleNamespace(sub=NonStdSequence())
+
+        self.fname = "test_obj_write_non_std_seq.hdf5"
+        with h5py.File(self.fname, "w") as f:
+            write_object_hierarchy(f, self.obj)
+
+    def test_nonstandard_sequence_written_as_group(self):
+        with h5py.File(self.fname, "r") as f:
+            self.assertIn("sub", f)
+            self.assertTrue(isinstance(f["sub"], h5py.Group))
+
+    def test_nonstandard_sequence_has_list_special_type(self):
+        with h5py.File(self.fname, "r") as f:
+            self.assertEqual(f["sub"].attrs["_special_type"], "list")
+
+    def test_nonstandard_sequence_has_correct_length(self):
+        with h5py.File(self.fname, "r") as f:
+            n = len([_ for _ in self.obj.sub])
+            self.assertEqual(f["sub"].attrs["_len"], n)
+
+    def test_nonstandard_sequence_has_correct_elements(self):
+        with h5py.File(self.fname, "r") as f:
+            for i, x in enumerate(self.obj.sub):
+                self.assertAlmostEqual(f["sub"].attrs[f"_{i}"], x)
+
+
+class TestWriteObjectHierarchySet(unittest.TestCase):
+    def setUp(self):
+        self.obj = {1, 2, 0.3}
+
+        self.fname = "test_obj_write_set.hdf5"
+        with h5py.File(self.fname, "w") as f:
+            write_object_hierarchy(f, self.obj)
+
+    def test_set_has_set_special_type(self):
+        with h5py.File(self.fname, "r") as f:
+            self.assertEqual(f.attrs["_special_type"], "set")
+
+    def test_set_has_correct_length(self):
+        with h5py.File(self.fname, "r") as f:
+            self.assertEqual(f.attrs["_len"], len(self.obj))
+
+    def test_set_has_correct_elements(self):
+        with h5py.File(self.fname, "r") as f:
+            for i, x in enumerate(self.obj):
+                self.assertAlmostEqual(f.attrs[f"_{i}"], x)
+
+
+class TestWriteObjectHierarchyTupleOrList(unittest.TestCase):
+    def setUp(self):
+        self.obj = SimpleNamespace(
+            n_tpl=(1, 2, 3), v_tpl=("foo", 3), n_lst=[0, 1, 2], v_lst=["bar", 2.0]
+        )
+
+        self.fname = "test_obj_write_tuple_or_list.hdf5"
+        with h5py.File(self.fname, "w") as f:
+            write_object_hierarchy(f, self.obj)
+
+    def test_numeric_tuple_stored_as_tuple(self):
+        with h5py.File(self.fname, "r") as f:
+            self.assertIn("n_tpl", f)
+            self.assertTrue(isinstance(f["n_tpl"], h5py.Group))
+
+            self.assertIn("_special_type", f["n_tpl"].attrs)
+            self.assertEqual(f["n_tpl"].attrs["_special_type"], "tuple")
+
+    def test_numeric_tuple_contents_correct(self):
+        with h5py.File(self.fname, "r") as f:
+            g = f["n_tpl"]
+            self.assertEqual(g.attrs["_len"], len(self.obj.n_tpl))
+
+            for i, x in enumerate(self.obj.n_tpl):
+                crt_name = f"_{i}"
+                self.assertIn(crt_name, g.attrs)
+                self.assertAlmostEqual(g.attrs[crt_name], x)
+
+    def test_generic_tuple_stored_as_tuple(self):
+        with h5py.File(self.fname, "r") as f:
+            self.assertIn("v_tpl", f)
+            self.assertTrue(isinstance(f["v_tpl"], h5py.Group))
+
+            self.assertIn("_special_type", f["v_tpl"].attrs)
+            self.assertEqual(f["v_tpl"].attrs["_special_type"], "tuple")
+
+    def test_generic_tuple_contents_correct(self):
+        with h5py.File(self.fname, "r") as f:
+            g = f["v_tpl"]
+            self.assertEqual(g.attrs["_len"], len(self.obj.v_tpl))
+
+            for i, x in enumerate(self.obj.v_tpl):
+                crt_name = f"_{i}"
+                self.assertIn(crt_name, g.attrs)
+                if isinstance(x, str):
+                    self.assertEqual(g.attrs[crt_name], x)
+                else:
+                    self.assertAlmostEqual(g.attrs[crt_name], x)
+
+    def test_numeric_list_stored_as_tuple(self):
+        with h5py.File(self.fname, "r") as f:
+            self.assertIn("n_lst", f)
+            self.assertTrue(isinstance(f["n_lst"], h5py.Group))
+
+            self.assertIn("_special_type", f["n_lst"].attrs)
+            self.assertEqual(f["n_lst"].attrs["_special_type"], "list")
+
+    def test_numeric_list_contents_correct(self):
+        with h5py.File(self.fname, "r") as f:
+            g = f["n_lst"]
+            self.assertEqual(g.attrs["_len"], len(self.obj.n_lst))
+
+            for i, x in enumerate(self.obj.n_lst):
+                crt_name = f"_{i}"
+                self.assertIn(crt_name, g.attrs)
+                self.assertAlmostEqual(g.attrs[crt_name], x)
+
+    def test_generic_list_stored_as_tuple(self):
+        with h5py.File(self.fname, "r") as f:
+            self.assertIn("v_lst", f)
+            self.assertTrue(isinstance(f["v_lst"], h5py.Group))
+
+            self.assertIn("_special_type", f["v_lst"].attrs)
+            self.assertEqual(f["v_lst"].attrs["_special_type"], "list")
+
+    def test_generic_list_contents_correct(self):
+        with h5py.File(self.fname, "r") as f:
+            g = f["v_lst"]
+            self.assertEqual(g.attrs["_len"], len(self.obj.v_lst))
+
+            for i, x in enumerate(self.obj.v_lst):
+                crt_name = f"_{i}"
+                self.assertIn(crt_name, g.attrs)
+                if isinstance(x, str):
+                    self.assertEqual(g.attrs[crt_name], x)
+                else:
+                    self.assertAlmostEqual(g.attrs[crt_name], x)
 
 
 class TestReadNamespaceHierarchy(unittest.TestCase):
