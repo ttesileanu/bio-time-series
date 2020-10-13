@@ -157,6 +157,8 @@ class RandomArmaDataset(Sequence[SwitchingSignal]):
 
         self.arma_hsmm_kws = copy.copy(kwargs)
 
+        self.hdf_skip_contents = True
+
     def _figure_out_scales(self, fix_scale: float):
         """ Use fix_source_scale to normalize ARMA outputs. """
         all_scales = []
