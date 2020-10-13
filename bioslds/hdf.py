@@ -217,16 +217,30 @@ def read_namespace_hierarchy(group: h5py.Group) -> SimpleNamespace:
     """ Recurse through an HDF's group structure, and return it as a nested namespace.
 
     This acts as a converse to `write_object_hierarchy`. While it does not attempt to
-    create instances of the appropriate objects (beyond `dict` -- see below), it should
-    return a hierarchy that can be accessed in the same way as the original object did
-    before saving to HDF.
+    create instances of the appropriate objects beyond a few special cases (see below),
+    it returns a hierarchy that can be accessed in the same way as the original object
+    did before saving to HDF.
 
-    The group's attributes are also stored in the namespace. If an attribute name
-    conflicts with a dataset's name, it is prefixed by "attr_". If this prefixed version
-    of the name also conflicts, it is ignored.
+    The group's attributes, not only its datasets, are also stored in the returned
+    namespace. If an attribute name conflicts with a dataset's name, it is prefixed by
+    "attr_". If this prefixed version of the name also conflicts, it is ignored.
 
-    The function looks for an attribute "_type" in every group. If this is the string
-    "dict", that group is loaded as a `dict` instead of a namespace.
+    The function treats `tuple`s, `list`s, `set`s, and `dict`s in a special way. It
+    looks for an attribute called "_special_type" in every group. If this exists and is
+    equal to "tuple", "list", "set", or "dict", it attempts to load that group as the
+    respective Python type. Dictionaries are assumed to be saved as lists of tuples, so
+    the function attempts to read an object with `special_type == "dict"` as a list and
+    then cast that into a `dict`.
+
+    For reading a sequence to work, an attribute called "_len" must exist, indicating
+    the number of elements in the sequence. Then for each index `idx` from 0 to this
+    length (excluding the length), the function looks for either a dataset or an
+    attribute called "_idx", and assigns this as the corresponding element in the list.
+    Missing elements are replaced by `None`, except for a `set`, where the numbering has
+    no effect.
+
+    If an object has `_special_type == "dict"` but is not stored as a list of tuples
+    with length 2, the list itself is returned instead.
 
     Parameters
     ----------
@@ -235,24 +249,60 @@ def read_namespace_hierarchy(group: h5py.Group) -> SimpleNamespace:
 
     Returns a nested `SimpleNamespace` with the contents of the HDF group.
     """
-    d = SimpleNamespace()
-    for key in group.keys():
-        value = group[key]
-        if not isinstance(value, h5py.Group):
-            value = value[()]
-            if np.issubdtype(value.dtype, np.string_) and len(value) == 1:
-                value = value[0]
-            setattr(d, key, value)
-        else:
-            setattr(d, key, read_namespace_hierarchy(value))
+    # check if this is a special type
+    if "_special_type" in group.attrs:
+        special_type = group.attrs["_special_type"]
+    else:
+        special_type = ""
 
-    for key in group.attrs.keys():
-        value = group.attrs[key]
-        if isinstance(value, bytes):
-            value = value.decode()
-        if not hasattr(d, key):
-            setattr(d, key, value)
-        else:
-            setattr(d, "attr_" + key, value)
+    has_len = "_len" in group.attrs
+    is_seq_or_dict = special_type in ["tuple", "list", "set", "dict"] and has_len
+    if is_seq_or_dict:
+        n = group.attrs["_len"]
+        d = []
+        for i in range(n):
+            crt_name = f"_{i}"
+            crt_value = None
+            if crt_name in group:
+                crt_value = group[crt_name]
+                if isinstance(crt_value, h5py.Group):
+                    crt_value = read_namespace_hierarchy(crt_value)
+                else:
+                    crt_value = crt_value[()]
+            elif crt_name in group.attrs:
+                crt_value = group.attrs[crt_name]
+
+            if crt_value is not None or special_type != "set":
+                d.append(crt_value)
+
+        if special_type == "tuple":
+            d = tuple(d)
+        elif special_type == "set":
+            d = set(d)
+        elif special_type == "dict":
+            if all(isinstance(_, tuple) and len(_) == 2 for _ in d):
+                d = dict(d)
+    else:
+        d = SimpleNamespace()
+        for key in group.keys():
+            value = group[key]
+            if not isinstance(value, h5py.Group):
+                value = value[()]
+                if np.issubdtype(value.dtype, np.string_) and len(value) == 1:
+                    value = value[0]
+                setattr(d, key, value)
+            else:
+                setattr(d, key, read_namespace_hierarchy(value))
+
+        for key in group.attrs.keys():
+            value = group.attrs[key]
+            if isinstance(value, bytes):
+                value = value.decode()
+            if not hasattr(d, key):
+                setattr(d, key, value)
+            else:
+                key = "attr_" + key
+                if not hasattr(d, key):
+                    setattr(d, key, value)
 
     return d

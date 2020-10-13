@@ -651,7 +651,7 @@ class TestReadNamespaceHierarchy(unittest.TestCase):
             d = read_namespace_hierarchy(f)
 
             self.assertTrue(hasattr(d, "attr_foo"))
-            self.assertAlmostEqual(d.attr_foo, attr_foo)
+            np.testing.assert_allclose(d.attr_foo, dataset_attr_foo)
 
     def test_hierarchy(self):
         foo = [1, 2, 0.5]
@@ -670,6 +670,171 @@ class TestReadNamespaceHierarchy(unittest.TestCase):
 
             self.assertTrue(hasattr(d.sub, "subfoo"))
             np.testing.assert_allclose(d.sub.subfoo, subfoo)
+
+
+class TestReadNamespaceHierarchyListOrTuple(unittest.TestCase):
+    def setUp(self):
+        self.fname = "test_read_seq.hdf5"
+        self.seq = [3, "foo", np.array([1, 2, 5])]
+
+        with h5py.File(self.fname, "w") as f:
+            for name, t in {"tpl": "tuple", "lst": "list"}.items():
+                f.create_group(name)
+                f[name].attrs.create("_special_type", t)
+                f[name].attrs.create("_len", len(self.seq))
+                f[name].attrs.create("_0", self.seq[0])
+                f[name].attrs.create("_1", self.seq[1])
+                f[name].create_dataset("_2", data=self.seq[2])
+
+        with h5py.File(self.fname, "r") as f:
+            self.loaded = read_namespace_hierarchy(f)
+
+    def test_tuple_loaded_as_tuple(self):
+        self.assertTrue(isinstance(self.loaded.tpl, tuple))
+
+    def test_list_loaded_as_list(self):
+        self.assertTrue(isinstance(self.loaded.lst, list))
+
+    def test_tuple_elements_correct(self):
+        self.assertEqual(self.loaded.tpl[0], self.seq[0])
+        self.assertEqual(self.loaded.tpl[1], self.seq[1])
+        np.testing.assert_allclose(self.loaded.tpl[2], self.seq[2])
+
+    def test_list_elements_correct(self):
+        self.assertEqual(self.loaded.lst[0], self.seq[0])
+        self.assertEqual(self.loaded.lst[1], self.seq[1])
+        np.testing.assert_allclose(self.loaded.lst[2], self.seq[2])
+
+
+class TestReadNamespaceHierarchySet(unittest.TestCase):
+    def setUp(self):
+        self.fname = "test_read_seq.hdf5"
+        self.seq = [3, "foo"]
+
+        with h5py.File(self.fname, "w") as f:
+            f.create_group("s")
+            f["s"].attrs.create("_special_type", "set")
+            f["s"].attrs.create("_len", len(self.seq))
+            f["s"].attrs.create("_0", self.seq[0])
+            f["s"].attrs.create("_1", self.seq[1])
+
+        with h5py.File(self.fname, "r") as f:
+            self.loaded = read_namespace_hierarchy(f)
+
+    def test_set_loaded_as_set(self):
+        self.assertTrue(isinstance(self.loaded.s, set))
+
+    def test_set_elements_correct(self):
+        self.assertEqual(self.loaded.s, set(self.seq))
+
+
+class TestReadNamespaceHierarchyListIndexErrors(unittest.TestCase):
+    def setUp(self):
+        self.fname = "test_read_seq.hdf5"
+        self.n = 4
+
+        with h5py.File(self.fname, "w") as f:
+            f.create_group("lst")
+            f["lst"].attrs.create("_special_type", "list")
+            f["lst"].attrs.create("_len", self.n)
+            f["lst"].attrs.create("_0", 1)
+            f["lst"].attrs.create("_2", 1)
+            f["lst"].attrs.create("_4", 2)
+
+        with h5py.File(self.fname, "r") as f:
+            self.loaded = read_namespace_hierarchy(f)
+
+    def test_missing_elements_set_to_none(self):
+        self.assertIsNone(self.loaded.lst[1])
+        self.assertIsNone(self.loaded.lst[3])
+
+    def test_additional_elements_ignored(self):
+        self.assertEqual(len(self.loaded.lst), 4)
+
+
+class TestReadNamespaceHierarchySetIndexErrors(unittest.TestCase):
+    def setUp(self):
+        self.fname = "test_read_seq.hdf5"
+        self.n = 4
+
+        with h5py.File(self.fname, "w") as f:
+            f.create_group("s")
+            f["s"].attrs.create("_special_type", "set")
+            f["s"].attrs.create("_len", self.n)
+            f["s"].attrs.create("_0", 1)
+            f["s"].attrs.create("_2", 2)
+            f["s"].attrs.create("_4", 3)
+
+        with h5py.File(self.fname, "r") as f:
+            self.loaded = read_namespace_hierarchy(f)
+
+    def test_existing_elements_loaded_correctly(self):
+        self.assertIn(1, self.loaded.s)
+        self.assertIn(2, self.loaded.s)
+
+    def test_missing_elements_ignored(self):
+        self.assertNotIn(None, self.loaded.s)
+
+    def test_additional_elements_ignored(self):
+        self.assertNotIn(3, self.loaded.s)
+
+
+class TestReadNamespaceHierarchyDict(unittest.TestCase):
+    def setUp(self):
+        self.fname = "test_read_dict.hdf5"
+        self.d = {"foo": "foo2", "bar": 3.5, 3: np.array([2, 3]), (2, 3): 5.0}
+
+        with h5py.File(self.fname, "w") as f:
+            f.create_group("d")
+            f["d"].attrs.create("_special_type", "dict")
+            f["d"].attrs.create("_len", len(self.d))
+            for i in range(len(self.d)):
+                f["d"].create_group(f"_{i}")
+                f[f"d/_{i}"].attrs.create("_special_type", "tuple")
+                f[f"d/_{i}"].attrs.create("_len", 2)
+
+            f["d/_0"].attrs.create("_0", "foo")
+            f["d/_0"].attrs.create("_1", "foo2")
+
+            f["d/_1"].attrs.create("_0", "bar")
+            f["d/_1"].attrs.create("_1", 3.5)
+
+            f["d/_2"].attrs.create("_0", 3)
+            f["d/_2"].create_dataset("_1", data=self.d[3])
+
+            f["d/_3"].create_group("_0")
+            f["d/_3/_0"].attrs.create("_special_type", "tuple")
+            f["d/_3/_0"].attrs.create("_len", 2)
+            f["d/_3/_0"].attrs.create("_0", 2)
+            f["d/_3/_0"].attrs.create("_1", 3)
+            f["d/_3"].attrs.create("_1", 5.0)
+
+        with h5py.File(self.fname, "r") as f:
+            self.loaded = read_namespace_hierarchy(f)
+
+    def test_set_loaded_as_dict(self):
+        self.assertTrue(isinstance(self.loaded.d, dict))
+
+    def test_dict_keys_correct(self):
+        self.assertIn("foo", self.loaded.d)
+        self.assertIn("bar", self.loaded.d)
+        self.assertIn(3, self.loaded.d)
+        self.assertIn((2, 3), self.loaded.d)
+
+    def test_dict_size_correct(self):
+        self.assertEqual(len(self.loaded.d), 4)
+
+    def test_dict_foo_correct(self):
+        self.assertEqual(self.loaded.d["foo"], self.d["foo"])
+
+    def test_dict_bar_correct(self):
+        self.assertAlmostEqual(self.loaded.d["bar"], self.d["bar"])
+
+    def test_dict_three_correct(self):
+        np.testing.assert_allclose(self.loaded.d[3], self.d[3])
+
+    def test_dict_tuple_correct(self):
+        self.assertAlmostEqual(self.loaded.d[(2, 3)], self.d[(2, 3)])
 
 
 if __name__ == "__main__":
