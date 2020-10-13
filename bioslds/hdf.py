@@ -105,7 +105,10 @@ def write_object_hierarchy(group: h5py.Group, obj: Any):
        method) or by a random-access interface based on `__getitem__`. These are stored
        as lists.
     In each of the cases above, any additional non-callable attributes that do not start
-    with an underscore are also stored.
+    with an underscore are also stored. There is a way to avoid storing all of a
+    sequence's elements: if the object has an attribute `hdf_skip_contents` that
+    evaluates to `True`. In this case, only the non-callable attributes that do not
+    start with an underscore are stored.
 
     In all cases, the string representation of the object's Python `type` is stored as a
     string attribute called "_type".
@@ -143,8 +146,9 @@ def write_object_hierarchy(group: h5py.Group, obj: Any):
     # ...but add some special and dummy attributes for sequences
     is_seq = hasattr(obj, "__getitem__")
     is_iter = hasattr(obj, "__iter__")
+    has_skip = hasattr(obj, "hdf_skip_contents") and obj.hdf_skip_contents
     elem_list = None
-    if is_seq or is_iter:
+    if (is_seq or is_iter) and not has_skip:
         # store a special type, and the sequence length
         special_type = "list"
         if isinstance(obj, tuple):

@@ -594,6 +594,46 @@ class TestWriteObjectHierarchyTupleOrList(unittest.TestCase):
                     self.assertAlmostEqual(g.attrs[crt_name], x)
 
 
+class TestWriteObjectHierarchySequenceWithHDFSkipContents(unittest.TestCase):
+    def setUp(self):
+        class NoWriteSequence:
+            def __init__(self):
+                self.hdf_skip_contents = True
+                self.foo = "foo"
+                self.bar = np.asarray([0, 1, 1])
+
+            def __getitem__(self, idx):
+                if idx < 3:
+                    return idx ** 3
+                else:
+                    raise IndexError
+
+        self.seq = NoWriteSequence()
+        self.fname = os.path.join(temp_path, "test_write_skip_contents.hdf5")
+        with h5py.File(self.fname, "w") as f:
+            write_object_hierarchy(f, self.seq)
+
+    def test_contents_not_saved_as_datasets(self):
+        with h5py.File(self.fname, "r") as f:
+            under = [_ for _ in f.keys() if _.startswith("_")]
+            self.assertEqual(len(under), 0)
+
+    def test_contents_not_saved_as_attribs(self):
+        with h5py.File(self.fname, "r") as f:
+            under = {_ for _ in f.attrs.keys() if _.startswith("_")}
+            # we expect some entries
+            under.discard("_type")
+            self.assertEqual(len(under), 0)
+
+    def test_attr_saved(self):
+        with h5py.File(self.fname, "r") as f:
+            self.assertIn("foo", f.attrs)
+
+    def test_dataset_saved(self):
+        with h5py.File(self.fname, "r") as f:
+            self.assertIn("bar", f)
+
+
 class TestReadNamespaceHierarchy(unittest.TestCase):
     def test_read_flat(self):
         d_exp = {"foo": np.array([-0.1, 5]), "bar": [1, 0.2, -3]}
