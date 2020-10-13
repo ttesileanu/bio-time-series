@@ -680,6 +680,9 @@ class TestReadNamespaceHierarchyListOrTuple(unittest.TestCase):
         self.fname = os.path.join(temp_path, "test_read_seq.hdf5")
         self.seq = [3, "foo", np.array([1, 2, 5])]
 
+        self.extra_attr = 5.0
+        self.extra_dataset = np.array([0.0, 0.5, 1.0])
+
         with h5py.File(self.fname, "w") as f:
             for name, t in {"tpl": "tuple", "lst": "list"}.items():
                 f.create_group(name)
@@ -688,6 +691,9 @@ class TestReadNamespaceHierarchyListOrTuple(unittest.TestCase):
                 f[name].attrs.create("_0", self.seq[0])
                 f[name].attrs.create("_1", self.seq[1])
                 f[name].create_dataset("_2", data=self.seq[2])
+
+                f[name].attrs.create("foo", self.extra_attr)
+                f[name].create_dataset("bar", data=self.extra_dataset)
 
         with h5py.File(self.fname, "r") as f:
             self.loaded = read_namespace_hierarchy(f)
@@ -708,11 +714,38 @@ class TestReadNamespaceHierarchyListOrTuple(unittest.TestCase):
         self.assertEqual(self.loaded.lst[1], self.seq[1])
         np.testing.assert_allclose(self.loaded.lst[2], self.seq[2])
 
+    def test_extra_tuple_attrib_loaded(self):
+        self.assertTrue(hasattr(self.loaded.tpl, "foo"))
+
+    def test_extra_tuple_dataset_loaded(self):
+        self.assertTrue(hasattr(self.loaded.tpl, "bar"))
+
+    def test_extra_tuple_attrib_correct(self):
+        self.assertAlmostEqual(self.loaded.tpl.foo, self.extra_attr)
+
+    def test_extra_tuple_dataset_correct(self):
+        np.testing.assert_allclose(self.loaded.tpl.bar, self.extra_dataset)
+
+    def test_extra_list_attrib_loaded(self):
+        self.assertTrue(hasattr(self.loaded.lst, "foo"))
+
+    def test_extra_list_dataset_loaded(self):
+        self.assertTrue(hasattr(self.loaded.lst, "bar"))
+
+    def test_extra_list_attrib_correct(self):
+        self.assertAlmostEqual(self.loaded.lst.foo, self.extra_attr)
+
+    def test_extra_list_dataset_correct(self):
+        np.testing.assert_allclose(self.loaded.lst.bar, self.extra_dataset)
+
 
 class TestReadNamespaceHierarchySet(unittest.TestCase):
     def setUp(self):
         self.fname = os.path.join(temp_path, "test_read_seq.hdf5")
         self.seq = [3, "foo"]
+
+        self.foo_attr = "fooooo"
+        self.foo_dataset = np.array([-0.5, 0.0, 0.5])
 
         with h5py.File(self.fname, "w") as f:
             f.create_group("s")
@@ -720,6 +753,9 @@ class TestReadNamespaceHierarchySet(unittest.TestCase):
             f["s"].attrs.create("_len", len(self.seq))
             f["s"].attrs.create("_0", self.seq[0])
             f["s"].attrs.create("_1", self.seq[1])
+
+            f["s"].attrs.create("foo_attr", self.foo_attr)
+            f["s"].create_dataset("foo_dataset", data=self.foo_dataset)
 
         with h5py.File(self.fname, "r") as f:
             self.loaded = read_namespace_hierarchy(f)
@@ -729,6 +765,18 @@ class TestReadNamespaceHierarchySet(unittest.TestCase):
 
     def test_set_elements_correct(self):
         self.assertEqual(self.loaded.s, set(self.seq))
+
+    def test_set_extra_attr_loaded(self):
+        self.assertTrue(hasattr(self.loaded.s, "foo_attr"))
+
+    def test_set_extra_dataset_loaded(self):
+        self.assertTrue(hasattr(self.loaded.s, "foo_dataset"))
+
+    def test_set_extra_attr_correct(self):
+        self.assertEqual(self.loaded.s.foo_attr, self.foo_attr)
+
+    def test_set_extra_dataset_correct(self):
+        np.testing.assert_allclose(self.loaded.s.foo_dataset, self.foo_dataset)
 
 
 class TestReadNamespaceHierarchyListIndexErrors(unittest.TestCase):
@@ -787,6 +835,9 @@ class TestReadNamespaceHierarchyDict(unittest.TestCase):
         self.fname = os.path.join(temp_path, "test_read_dict.hdf5")
         self.d = {"foo": "foo2", "bar": 3.5, 3: np.array([2, 3]), (2, 3): 5.0}
 
+        self.foo_attr = "bar"
+        self.foo_dataset = np.arange(5)
+
         with h5py.File(self.fname, "w") as f:
             f.create_group("d")
             f["d"].attrs.create("_special_type", "dict")
@@ -811,6 +862,9 @@ class TestReadNamespaceHierarchyDict(unittest.TestCase):
             f["d/_3/_0"].attrs.create("_0", 2)
             f["d/_3/_0"].attrs.create("_1", 3)
             f["d/_3"].attrs.create("_1", 5.0)
+
+            f["d"].attrs.create("foo_attr", self.foo_attr)
+            f["d"].create_dataset("foo_dataset", data=self.foo_dataset)
 
         with h5py.File(self.fname, "r") as f:
             self.loaded = read_namespace_hierarchy(f)
@@ -838,6 +892,18 @@ class TestReadNamespaceHierarchyDict(unittest.TestCase):
 
     def test_dict_tuple_correct(self):
         self.assertAlmostEqual(self.loaded.d[(2, 3)], self.d[(2, 3)])
+
+    def test_dict_extra_attr_loaded(self):
+        self.assertTrue(hasattr(self.loaded.d, "foo_attr"))
+
+    def test_dict_extra_dataset_loaded(self):
+        self.assertTrue(hasattr(self.loaded.d, "foo_dataset"))
+
+    def test_dict_extra_attr_correct(self):
+        self.assertEqual(self.loaded.d.foo_attr, self.foo_attr)
+
+    def test_dict_extra_dataset_correct(self):
+        np.testing.assert_allclose(self.loaded.d.foo_dataset, self.foo_dataset)
 
 
 if __name__ == "__main__":

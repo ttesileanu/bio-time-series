@@ -7,7 +7,7 @@ import numbers
 import numpy as np
 
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Union
 
 
 def write_dict_hierarchy(group: h5py.Group, d: dict, scalars_as_attribs: bool = True):
@@ -82,9 +82,7 @@ def read_dict_hierarchy(group: h5py.Group) -> dict:
     return d
 
 
-def write_object_hierarchy(
-    group: h5py.Group, obj: Any
-):
+def write_object_hierarchy(group: h5py.Group, obj: Any):
     """ Write an object with all its sub-objects to an HDF file.
 
     This first skips all attributes that start with an underscore or that are callable.
@@ -213,7 +211,33 @@ def write_object_hierarchy(
                 write_object_hierarchy(sub_group, attrib)
 
 
-def read_namespace_hierarchy(group: h5py.Group) -> SimpleNamespace:
+class ExtendableList(list):
+    """ A list that we can add attributes to. """
+
+    pass
+
+
+class ExtendableTuple(tuple):
+    """ A tuple that we can add attributes to. """
+
+    pass
+
+
+class ExtendableSet(set):
+    """ A set that we can add attributes to. """
+
+    pass
+
+
+class ExtendableDict(dict):
+    """ A dict that we can add attributes to. """
+
+    pass
+
+
+def read_namespace_hierarchy(
+    group: h5py.Group,
+) -> Union[tuple, list, set, dict, SimpleNamespace]:
     """ Recurse through an HDF's group structure, and return it as a nested namespace.
 
     This acts as a converse to `write_object_hierarchy`. While it does not attempt to
@@ -242,6 +266,10 @@ def read_namespace_hierarchy(group: h5py.Group) -> SimpleNamespace:
     If an object has `_special_type == "dict"` but is not stored as a list of tuples
     with length 2, the list itself is returned instead.
 
+    The objects that are returned may in fact be subclasses of the respective built-in
+    classes, to allow for additional data to be stored in attributes. This is necessary
+    to handle non-standard sequences or dictionaries.
+
     Parameters
     ----------
     group
@@ -255,11 +283,32 @@ def read_namespace_hierarchy(group: h5py.Group) -> SimpleNamespace:
     else:
         special_type = ""
 
+    # check whether there are any (additional) attributes to read
+    group_keys = [key for key in group.keys() if not key.startswith("_")]
+    group_attrs = [key for key in group.attrs.keys() if not key.startswith("_")]
+
+    # check if this is a sequence or dictionary
     has_len = "_len" in group.attrs
     is_seq_or_dict = special_type in ["tuple", "list", "set", "dict"] and has_len
     if is_seq_or_dict:
+        # yes! read the elements as a list
         n = group.attrs["_len"]
-        d = []
+
+        if is_seq_or_dict and (len(group_keys) > 0 or len(group_attrs) > 0):
+            # need to use a custom data type to be able to add attributes
+            d = ExtendableList()
+            cast_class = {
+                "list": ExtendableList,
+                "tuple": ExtendableTuple,
+                "set": ExtendableSet,
+                "dict": ExtendableDict,
+            }[special_type]
+        else:
+            d = []
+            cast_class = {"list": list, "tuple": tuple, "set": set, "dict": dict}[
+                special_type
+            ]
+
         for i in range(n):
             crt_name = f"_{i}"
             crt_value = None
@@ -275,34 +324,37 @@ def read_namespace_hierarchy(group: h5py.Group) -> SimpleNamespace:
             if crt_value is not None or special_type != "set":
                 d.append(crt_value)
 
-        if special_type == "tuple":
-            d = tuple(d)
-        elif special_type == "set":
-            d = set(d)
-        elif special_type == "dict":
+        # convert to the appropriate type
+        if special_type == "dict":
             if all(isinstance(_, tuple) and len(_) == 2 for _ in d):
-                d = dict(d)
+                d = cast_class(d)
+        elif special_type != "list":
+            d = cast_class(d)
     else:
+        # start off with an empty namespace
         d = SimpleNamespace()
-        for key in group.keys():
-            value = group[key]
-            if not isinstance(value, h5py.Group):
-                value = value[()]
-                if np.issubdtype(value.dtype, np.string_) and len(value) == 1:
-                    value = value[0]
-                setattr(d, key, value)
-            else:
-                setattr(d, key, read_namespace_hierarchy(value))
 
-        for key in group.attrs.keys():
-            value = group.attrs[key]
-            if isinstance(value, bytes):
-                value = value.decode()
+    # read the attributes encoded as HDF attributes
+    for key in group_keys:
+        value = group[key]
+        if not isinstance(value, h5py.Group):
+            value = value[()]
+            if np.issubdtype(value.dtype, np.string_) and len(value) == 1:
+                value = value[0]
+            setattr(d, key, value)
+        else:
+            setattr(d, key, read_namespace_hierarchy(value))
+
+    # read the attributes encoded as HDF attributes
+    for key in group_attrs:
+        value = group.attrs[key]
+        if isinstance(value, bytes):
+            value = value.decode()
+        if not hasattr(d, key):
+            setattr(d, key, value)
+        else:
+            key = "attr_" + key
             if not hasattr(d, key):
                 setattr(d, key, value)
-            else:
-                key = "attr_" + key
-                if not hasattr(d, key):
-                    setattr(d, key, value)
 
     return d
