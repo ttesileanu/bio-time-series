@@ -1,5 +1,6 @@
 import unittest
 
+import os
 import h5py
 
 import numpy as np
@@ -9,11 +10,13 @@ from types import SimpleNamespace
 from bioslds.hdf import write_dict_hierarchy, read_dict_hierarchy
 from bioslds.hdf import write_object_hierarchy, read_namespace_hierarchy
 
+temp_path = "temp"
+
 
 class TestWriteDictHierarchy(unittest.TestCase):
     def test_write_flat(self):
         d = {"foo": np.array([1, 5]), "bar": [1, 2, 3]}
-        fname = "test_write_flat.hdf5"
+        fname = os.path.join(temp_path, "test_write_flat.hdf5")
         with h5py.File(fname, "w") as f:
             write_dict_hierarchy(f, d)
 
@@ -27,7 +30,7 @@ class TestWriteDictHierarchy(unittest.TestCase):
     def test_write_string_when_scalars_as_attribs_is_false(self):
         d = {"foo": "bar"}
 
-        fname = "test_write_str.hdf5"
+        fname = os.path.join(temp_path, "test_write_str.hdf5")
         with h5py.File(fname, "w") as f:
             write_dict_hierarchy(f, d, scalars_as_attribs=False)
 
@@ -38,7 +41,7 @@ class TestWriteDictHierarchy(unittest.TestCase):
     def test_write_string_when_scalars_as_attribs_is_true(self):
         d = {"foo": "bar"}
 
-        fname = "test_write_str.hdf5"
+        fname = os.path.join(temp_path, "test_write_str.hdf5")
         with h5py.File(fname, "w") as f:
             write_dict_hierarchy(f, d, scalars_as_attribs=True)
 
@@ -48,7 +51,7 @@ class TestWriteDictHierarchy(unittest.TestCase):
 
     def test_scalars_as_attribs_by_default(self):
         d = {"foo": 3}
-        fname = "test_write_scalar_attribs.hdf5"
+        fname = os.path.join(temp_path, "test_write_scalar_attribs.hdf5")
         with h5py.File(fname, "w") as f:
             write_dict_hierarchy(f, d)
 
@@ -59,7 +62,7 @@ class TestWriteDictHierarchy(unittest.TestCase):
 
     def test_disable_scalars_as_attribs(self):
         d = {"foo": 3}
-        fname = "test_write_scalar_as_not_attribs.hdf5"
+        fname = os.path.join(temp_path, "test_write_scalar_as_not_attribs.hdf5")
         with h5py.File(fname, "w") as f:
             write_dict_hierarchy(f, d, scalars_as_attribs=False)
 
@@ -70,7 +73,7 @@ class TestWriteDictHierarchy(unittest.TestCase):
     def test_hierarchy(self):
         d1 = {"subfoo": [1, 2.3]}
         d = {"d1": d1}
-        fname = "test_write_hierarchical.hdf5"
+        fname = os.path.join(temp_path, "test_write_hierarchical.hdf5")
         with h5py.File(fname, "w") as f:
             write_dict_hierarchy(f, d, scalars_as_attribs=False)
 
@@ -83,7 +86,7 @@ class TestWriteDictHierarchy(unittest.TestCase):
 class TestReadDictHierarchy(unittest.TestCase):
     def test_read_flat(self):
         d_exp = {"foo": np.array([-0.1, 5]), "bar": [1, 0.2, -3]}
-        fname = "test_read_flat.hdf5"
+        fname = os.path.join(temp_path, "test_read_flat.hdf5")
         with h5py.File(fname, "w") as f:
             f.create_dataset("foo", data=d_exp["foo"])
             f.create_dataset("bar", data=d_exp["bar"])
@@ -99,7 +102,7 @@ class TestReadDictHierarchy(unittest.TestCase):
 
     def test_read_attribs_as_scalars(self):
         d_exp = {"foo": 3}
-        fname = "test_read_scalar_attribs.hdf5"
+        fname = os.path.join(temp_path, "test_read_scalar_attribs.hdf5")
         with h5py.File(fname, "w") as f:
             f.attrs.create("foo", d_exp["foo"])
 
@@ -112,7 +115,7 @@ class TestReadDictHierarchy(unittest.TestCase):
     def test_conflict_dataset_name_and_attrib_name(self):
         foo = [1, 2, 3]
         attr_foo = -3.5
-        fname = "test_read_scalar_attribs_conflict.hdf5"
+        fname = os.path.join(temp_path, "test_read_scalar_attribs_conflict.hdf5")
         with h5py.File(fname, "w") as f:
             f.create_dataset("foo", data=foo)
             f.attrs.create("foo", attr_foo)
@@ -130,7 +133,7 @@ class TestReadDictHierarchy(unittest.TestCase):
         foo = [1, 2, 3]
         dataset_attr_foo = [2, 3, 1]
         attr_foo = -3.5
-        fname = "test_read_scalar_attribs_conflict.hdf5"
+        fname = os.path.join(temp_path, "test_read_scalar_attribs_conflict.hdf5")
         with h5py.File(fname, "w") as f:
             f.create_dataset("foo", data=foo)
             f.create_dataset("attr_foo", data=dataset_attr_foo)
@@ -145,7 +148,7 @@ class TestReadDictHierarchy(unittest.TestCase):
     def test_hierarchy(self):
         foo = [1, 2, 0.5]
         subfoo = [3, 2, 1]
-        fname = "test_read_hierarchical.hdf5"
+        fname = os.path.join(temp_path, "test_read_hierarchical.hdf5")
         with h5py.File(fname, "w") as f:
             f.create_dataset("foo", data=foo)
             f_dict = f.create_group("dict")
@@ -171,7 +174,7 @@ class TestWriteReadDictHierarchyRoundtrip(unittest.TestCase):
             "dict": self.d1,
         }
 
-        self.fname = "test_write_read_roundtrip.hdf5"
+        self.fname = os.path.join(temp_path, "test_write_read_roundtrip.hdf5")
         with h5py.File(self.fname, "w") as f:
             write_dict_hierarchy(f, self.d)
 
@@ -205,7 +208,7 @@ class TestWriteReadDictHierarchyRoundtripWhenScalarsNotAttribs(unittest.TestCase
             "dict": self.d1,
         }
 
-        self.fname = "test_write_read_roundtrip.hdf5"
+        self.fname = os.path.join(temp_path, "test_write_read_roundtrip.hdf5")
         with h5py.File(self.fname, "w") as f:
             write_dict_hierarchy(f, self.d, scalars_as_attribs=False)
 
@@ -251,7 +254,7 @@ class TestWriteObjectHierarchyGeneric(unittest.TestCase):
     def setUp(self):
         self.sub_obj = SubObject(np.array([3.5, -0.5]))
         self.obj = AnObject("bar", 5.2, self.sub_obj)
-        self.fname = "test_obj_write.hdf5"
+        self.fname = os.path.join(temp_path, "test_obj_write.hdf5")
 
         with h5py.File(self.fname, "w") as f:
             write_object_hierarchy(f, self.obj)
@@ -332,7 +335,7 @@ class TestWriteObjectHierarchyBoolArray(unittest.TestCase):
     def test_writing_bool_array_works(self):
         foo = np.array([True, False, False, True])
 
-        fname = "test_obj_write_bool.hdf5"
+        fname = os.path.join(temp_path, "test_obj_write_bool.hdf5")
         with h5py.File(fname, "w") as f:
             write_object_hierarchy(f, SimpleNamespace(foo=foo))
 
@@ -345,7 +348,7 @@ class TestWriteObjectHierarchyNonNumericNumpyArrayAsLists(unittest.TestCase):
     def test_writing_non_numeric_array_yields_list(self):
         foo = np.array([None, (2, 3), 0.3], dtype=object)
 
-        fname = "test_obj_write_non_numeric_array.hdf5"
+        fname = os.path.join(temp_path, "test_obj_write_non_numeric_array.hdf5")
         with h5py.File(fname, "w") as f:
             write_object_hierarchy(f, SimpleNamespace(foo=foo))
 
@@ -366,7 +369,7 @@ class TestWriteObjectHierarchyInaccessibleAttribute(unittest.TestCase):
                 raise KeyError
 
         obj = AnotherObject()
-        fname = "test_obj_write_skip_inaccessible.hdf5"
+        fname = os.path.join(temp_path, "test_obj_write_skip_inaccessible.hdf5")
         with h5py.File(fname, "w") as f:
             write_object_hierarchy(f, obj)
 
@@ -389,7 +392,7 @@ class TestWriteObjectHierarchyNonStandardSequenceWithoutLen(unittest.TestCase):
 
         self.obj = SimpleNamespace(sub=NonStdSequence())
 
-        self.fname = "test_obj_write_non_std_seq.hdf5"
+        self.fname = os.path.join(temp_path, "test_obj_write_non_std_seq.hdf5")
         with h5py.File(self.fname, "w") as f:
             write_object_hierarchy(f, self.obj)
 
@@ -426,7 +429,7 @@ class TestWriteObjectHierarchyNonStandardSequenceWithLen(unittest.TestCase):
 
         self.obj = SimpleNamespace(sub=NonStdSequence())
 
-        self.fname = "test_obj_write_non_std_seq.hdf5"
+        self.fname = os.path.join(temp_path, "test_obj_write_non_std_seq.hdf5")
         with h5py.File(self.fname, "w") as f:
             write_object_hierarchy(f, self.obj)
 
@@ -456,7 +459,7 @@ class TestWriteObjectHierarchyNonStandardIterable(unittest.TestCase):
 
         self.obj = SimpleNamespace(sub=NonStdSequence())
 
-        self.fname = "test_obj_write_non_std_seq.hdf5"
+        self.fname = os.path.join(temp_path, "test_obj_write_non_std_seq.hdf5")
         with h5py.File(self.fname, "w") as f:
             write_object_hierarchy(f, self.obj)
 
@@ -484,7 +487,7 @@ class TestWriteObjectHierarchySet(unittest.TestCase):
     def setUp(self):
         self.obj = {1, 2, 0.3}
 
-        self.fname = "test_obj_write_set.hdf5"
+        self.fname = os.path.join(temp_path, "test_obj_write_set.hdf5")
         with h5py.File(self.fname, "w") as f:
             write_object_hierarchy(f, self.obj)
 
@@ -508,7 +511,7 @@ class TestWriteObjectHierarchyTupleOrList(unittest.TestCase):
             n_tpl=(1, 2, 3), v_tpl=("foo", 3), n_lst=[0, 1, 2], v_lst=["bar", 2.0]
         )
 
-        self.fname = "test_obj_write_tuple_or_list.hdf5"
+        self.fname = os.path.join(temp_path, "test_obj_write_tuple_or_list.hdf5")
         with h5py.File(self.fname, "w") as f:
             write_object_hierarchy(f, self.obj)
 
@@ -594,7 +597,7 @@ class TestWriteObjectHierarchyTupleOrList(unittest.TestCase):
 class TestReadNamespaceHierarchy(unittest.TestCase):
     def test_read_flat(self):
         d_exp = {"foo": np.array([-0.1, 5]), "bar": [1, 0.2, -3]}
-        fname = "test_read_flat.hdf5"
+        fname = os.path.join(temp_path, "test_read_flat.hdf5")
         with h5py.File(fname, "w") as f:
             f.create_dataset("foo", data=d_exp["foo"])
             f.create_dataset("bar", data=d_exp["bar"])
@@ -610,7 +613,7 @@ class TestReadNamespaceHierarchy(unittest.TestCase):
 
     def test_read_attribs_as_scalars(self):
         d_exp = {"foo": 3}
-        fname = "test_read_scalar_attribs.hdf5"
+        fname = os.path.join(temp_path, "test_read_scalar_attribs.hdf5")
         with h5py.File(fname, "w") as f:
             f.attrs.create("foo", d_exp["foo"])
 
@@ -623,7 +626,7 @@ class TestReadNamespaceHierarchy(unittest.TestCase):
     def test_conflict_dataset_name_and_attrib_name(self):
         foo = [1, 2, 3]
         attr_foo = -3.5
-        fname = "test_read_scalar_attribs_conflict.hdf5"
+        fname = os.path.join(temp_path, "test_read_scalar_attribs_conflict.hdf5")
         with h5py.File(fname, "w") as f:
             f.create_dataset("foo", data=foo)
             f.attrs.create("foo", attr_foo)
@@ -641,7 +644,7 @@ class TestReadNamespaceHierarchy(unittest.TestCase):
         foo = [1, 2, 3]
         dataset_attr_foo = [2, 3, 1]
         attr_foo = -3.5
-        fname = "test_read_scalar_attribs_conflict.hdf5"
+        fname = os.path.join(temp_path, "test_read_scalar_attribs_conflict.hdf5")
         with h5py.File(fname, "w") as f:
             f.create_dataset("foo", data=foo)
             f.create_dataset("attr_foo", data=dataset_attr_foo)
@@ -656,7 +659,7 @@ class TestReadNamespaceHierarchy(unittest.TestCase):
     def test_hierarchy(self):
         foo = [1, 2, 0.5]
         subfoo = [3, 2, 1]
-        fname = "test_read_hierarchical.hdf5"
+        fname = os.path.join(temp_path, "test_read_hierarchical.hdf5")
         with h5py.File(fname, "w") as f:
             f.create_dataset("foo", data=foo)
             f_sub = f.create_group("sub")
@@ -674,7 +677,7 @@ class TestReadNamespaceHierarchy(unittest.TestCase):
 
 class TestReadNamespaceHierarchyListOrTuple(unittest.TestCase):
     def setUp(self):
-        self.fname = "test_read_seq.hdf5"
+        self.fname = os.path.join(temp_path, "test_read_seq.hdf5")
         self.seq = [3, "foo", np.array([1, 2, 5])]
 
         with h5py.File(self.fname, "w") as f:
@@ -708,7 +711,7 @@ class TestReadNamespaceHierarchyListOrTuple(unittest.TestCase):
 
 class TestReadNamespaceHierarchySet(unittest.TestCase):
     def setUp(self):
-        self.fname = "test_read_seq.hdf5"
+        self.fname = os.path.join(temp_path, "test_read_seq.hdf5")
         self.seq = [3, "foo"]
 
         with h5py.File(self.fname, "w") as f:
@@ -730,7 +733,7 @@ class TestReadNamespaceHierarchySet(unittest.TestCase):
 
 class TestReadNamespaceHierarchyListIndexErrors(unittest.TestCase):
     def setUp(self):
-        self.fname = "test_read_seq.hdf5"
+        self.fname = os.path.join(temp_path, "test_read_seq.hdf5")
         self.n = 4
 
         with h5py.File(self.fname, "w") as f:
@@ -754,7 +757,7 @@ class TestReadNamespaceHierarchyListIndexErrors(unittest.TestCase):
 
 class TestReadNamespaceHierarchySetIndexErrors(unittest.TestCase):
     def setUp(self):
-        self.fname = "test_read_seq.hdf5"
+        self.fname = os.path.join(temp_path, "test_read_seq.hdf5")
         self.n = 4
 
         with h5py.File(self.fname, "w") as f:
@@ -781,7 +784,7 @@ class TestReadNamespaceHierarchySetIndexErrors(unittest.TestCase):
 
 class TestReadNamespaceHierarchyDict(unittest.TestCase):
     def setUp(self):
-        self.fname = "test_read_dict.hdf5"
+        self.fname = os.path.join(temp_path, "test_read_dict.hdf5")
         self.d = {"foo": "foo2", "bar": 3.5, 3: np.array([2, 3]), (2, 3): 5.0}
 
         with h5py.File(self.fname, "w") as f:
