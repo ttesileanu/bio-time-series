@@ -39,10 +39,17 @@ def run_kmeans_hyper_optimize(
     clusterer_seed: int,
     optimizer_seed: int,
     rate_range: tuple,
+    rate_log: bool,
     exp_streak_range: tuple,
+    exp_streak_log: bool,
     monitor: list,
     monitor_step: int,
 ) -> Tuple[float, dict, dict]:
+    log_scale = []
+    if rate_log:
+        log_scale.append("rate")
+    if exp_streak_log:
+        log_scale.append("exp_streak")
     res = random_maximize(
         lambda **kwargs: hyper_score_ar(
             make_bio_wta_with_stable_initial,
@@ -59,6 +66,7 @@ def run_kmeans_hyper_optimize(
         ),
         {"rate": rate_range, "exp_streak": exp_streak_range},
         n_trials,
+        log_scale=log_scale,
         rng=optimizer_seed,
         progress=slow_tqdm,
     )
@@ -151,11 +159,23 @@ if __name__ == "__main__":
         help="range for learning rate parameter",
     )
     parser.add_argument(
+        "--rate-log",
+        action="store_true",
+        default=False,
+        help="sample learning rate in log space",
+    )
+    parser.add_argument(
         "--exp-streak-range",
         type=float,
         nargs=2,
         default=(1.5, 50.0),
         help="range for expected streak length",
+    )
+    parser.add_argument(
+        "--exp-streak-log",
+        action="store_true",
+        default=False,
+        help="sample expected streak length in log space",
     )
     parser.add_argument(
         "--store-signal-set",
@@ -244,7 +264,9 @@ if __name__ == "__main__":
         clusterer_seed=main_args.clusterer,
         optimizer_seed=main_args.optimizer,
         rate_range=main_args.rate_range,
+        rate_log=main_args.rate_log,
         exp_streak_range=main_args.exp_streak_range,
+        exp_streak_log=main_args.exp_streak_log,
         monitor=main_args.monitor,
         monitor_step=main_args.monitor_step,
     )
