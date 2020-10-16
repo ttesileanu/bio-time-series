@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from typing import Callable, Optional, Union, Tuple
+from typing import Callable, Optional, Union, Tuple, Sequence
 
 
 def random_maximize(
@@ -10,6 +10,7 @@ def random_maximize(
     param_ranges: dict,
     n_iter: int,
     rng: Union[int, np.random.Generator, np.random.RandomState] = 0,
+    log_scale: Optional[Sequence] = None,
     progress: Optional[Callable] = None,
 ) -> Tuple[float, dict, dict]:
     """ Evaluate a function at a set of randomly generated parameter values, finding the
@@ -33,6 +34,10 @@ def random_maximize(
     rng
         Random number generator to use, or integer seed. If a seed, a generator is
         created using `np.random.default_rng`.
+    log_scale
+        List of parameter names that should be sampled uniformly on a log scale instead
+        of the usual linear one. This assumes that both ends of the range for that
+        parameter are strictly positive, and forces the parameter to be real-valued.
     progress
         Callable to use for progress tracking.
 
@@ -48,16 +53,25 @@ def random_maximize(
     if not hasattr(rng, "uniform"):
         rng = np.random.default_rng(rng)
 
+    # handle optional log_sclae
+    if log_scale is None:
+        log_scale = []
+
     # figure out which random function to use for each parameter
     param_rng = {}
     for name, (low, high) in param_ranges.items():
-        if isinstance(low, int) and isinstance(high, int):
+        if name not in log_scale and isinstance(low, int) and isinstance(high, int):
             if hasattr(rng, "integers"):
                 param_rng[name] = lambda lo=low, hi=high: rng.integers(lo, hi)
             else:
                 param_rng[name] = lambda lo=low, hi=high: rng.randint(lo, hi)
         else:
-            param_rng[name] = lambda lo=low, hi=high: rng.uniform(lo, hi)
+            if name not in log_scale:
+                param_rng[name] = lambda lo=low, hi=high: rng.uniform(lo, hi)
+            else:
+                param_rng[name] = lambda llo=np.log(low), lhi=np.log(high): np.exp(
+                    rng.uniform(llo, lhi)
+                )
 
     # generate random parameters
     params = []
