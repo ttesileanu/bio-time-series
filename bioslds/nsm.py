@@ -6,7 +6,9 @@ import numpy as np
 
 from bioslds.monitor import AttributeMonitor
 
+from types import SimpleNamespace
 from typing import Optional, Sequence, Union, Callable
+from numba import njit
 
 
 class NonRecurrent(object):
@@ -31,7 +33,7 @@ class NonRecurrent(object):
         Whether the outputs are forced to be non-negative.
     whiten : bool
         Whether the outputs should be whitened.
-    n_features_ : int
+    n_features : int
         Number of features in the training data.
     output_ : np.ndarray
         Current output values.
@@ -116,14 +118,14 @@ class NonRecurrent(object):
 
         # infer input and output dimensions
         if weights is not None:
-            self.n_components, self.n_features_ = np.shape(weights)
+            self.n_components, self.n_features = np.shape(weights)
         else:
             if n_features is None:
                 raise ValueError(
                     "Need either weights or n_features to specify the "
                     "dimension of the inputs."
                 )
-            self.n_features_ = n_features
+            self.n_features = n_features
             if lateral is not None:
                 self.n_components = len(lateral)
             elif n_components is not None:
@@ -172,17 +174,17 @@ class NonRecurrent(object):
 
         # initialize connection weights
         if weights is not None:
-            self.weights_ = np.array(weights)
+            self.weights_ = np.array(weights, dtype=float)
         elif rng is not None:
             self.weights_ = rng.normal(
-                size=(self.n_components, self.n_features_)
-            ) / np.sqrt(self.n_features_)
+                size=(self.n_components, self.n_features)
+            ) / np.sqrt(self.n_features)
         else:
-            self.weights_ = np.ones((self.n_components, self.n_features_))
+            self.weights_ = np.ones((self.n_components, self.n_features))
 
         if lateral is not None:
             # make sure m0 is symmetric and positive definite
-            lateral = np.asarray(lateral)
+            lateral = np.asarray(lateral, dtype=float)
             lateral = 0.5 * (lateral + lateral.T)
 
             evals, evecs = np.linalg.eigh(lateral)
@@ -200,7 +202,7 @@ class NonRecurrent(object):
         # initialize step counter
         self.n_samples_ = 0
 
-        self._mode = "naive"
+        self._mode = "numba"
 
     # noinspection PyUnusedLocal
     def fit(
@@ -209,6 +211,7 @@ class NonRecurrent(object):
         y: None = None,
         progress: Optional[Callable] = None,
         monitor: Optional[AttributeMonitor] = None,
+        chunk_hint: int = 1000,
     ) -> "NonRecurrent":
         """ Feed data to the circuit, updating the output and the weights.
 
@@ -218,7 +221,7 @@ class NonRecurrent(object):
         Parameters
         ----------
         X
-            Dataset to feed into the circuit. Shape `(n_samples, n_features_)`.
+            Dataset to feed into the circuit. Shape `(n_samples, n_features)`.
         y
             Unused.
         progress
@@ -234,6 +237,9 @@ class NonRecurrent(object):
             An object for monitoring the evolution of the parameters during learning
             (e.g., an instance of `AttributeMonitor`). Parameter values are stored and
             calculated before their updates.
+        chunk_hint
+            A hint about how to chunk the learning. This may or may not be used. If it
+            is, the progress function will only be called once per chunk.
 
         Returns `self`.
         """
@@ -263,18 +269,93 @@ class NonRecurrent(object):
         else:
             self._learning_rate_vector = np.repeat(self.learning_rate, n)
 
-        it = X if progress is None else progress(X)
-
         if monitor is not None:
             monitor.setup(n)
 
+        fct_mapping = {
+            "naive": self._fit_naive,
+            "numba": self._fit_numba,
+        }
+        fct = fct_mapping[self._mode]
+
+        # noinspection PyArgumentList
+        fct(X, progress=progress, monitor=monitor, chunk_hint=chunk_hint)
+
+        return self
+
+    # noinspection PyUnusedLocal
+    def _fit_naive(self, X: Sequence, progress, monitor, chunk_hint: int):
+        it = X if progress is None else progress(X)
         for i, x in enumerate(it):
             if monitor is not None:
                 monitor.record(self)
 
             self._feed(x, self._learning_rate_vector[i])
 
-        return self
+    def _fit_numba(
+        self,
+        X: Sequence,
+        progress: Optional[Callable],
+        monitor: Optional[AttributeMonitor],
+        chunk_hint: int,
+    ):
+        if chunk_hint < 1:
+            chunk_hint = 1
+
+        # handle progress function
+        n = len(X)
+        if progress is not None:
+            pbar = progress(total=n)
+        else:
+            pbar = None
+
+        # set up monitor, if any
+        if monitor is not None:
+            monitor.setup(n)
+
+        X = np.asarray(X, dtype=float)
+        for chunk_start in range(0, n, chunk_hint):
+            crt_range = slice(chunk_start, chunk_start + chunk_hint)
+            crt_X = X[crt_range]
+            crt_n = len(crt_X)
+
+            crt_weights = np.zeros((crt_n, self.n_components, self.n_features))
+            crt_lateral = np.zeros((crt_n, self.n_components, self.n_components))
+            crt_output = np.zeros((crt_n, self.n_components))
+
+            crt_history = SimpleNamespace(
+                weights_=crt_weights, lateral_=crt_lateral, output_=crt_output
+            )
+
+            self._fit_numba_chunk(crt_X, crt_range=crt_range, crt_history=crt_history)
+
+            if pbar is not None:
+                pbar.update(crt_n)
+            if monitor is not None:
+                monitor.record_batch(crt_history)
+
+        if pbar is not None:
+            pbar.close()
+
+    def _fit_numba_chunk(
+        self, X: np.ndarray, crt_range: slice, crt_history: SimpleNamespace
+    ):
+        _perform_fit(
+            X,
+            self._learning_rate_vector[crt_range],
+            self.tau,
+            self.scalings,
+            self.non_negative,
+            self.whiten,
+            self.weights_,
+            self.lateral_,
+            self.output_,
+            crt_history.weights_,
+            crt_history.lateral_,
+            crt_history.output_,
+        )
+
+        self.n_samples_ += len(X)
 
     def _feed(self, x: Sequence, learning_rate: float):
         """ Feed a single data sample into the circuit.
@@ -320,7 +401,7 @@ class NonRecurrent(object):
     def clone(self):
         """ Make a clone of the current instance. """
         clone = NonRecurrent(
-            n_features=self.n_features_,
+            n_features=self.n_features,
             n_components=self.n_components,
             weights=self.weights_,
             lateral=self.lateral_,
@@ -339,7 +420,7 @@ class NonRecurrent(object):
             "NonRecurrent(n_features={}, n_components={}, non_negative={}, "
             "whiten={}, learning_rate={}, tau={}, scalings={}, output_={},\n"
             "weights_={},\nlateral_={})".format(
-                self.n_features_,
+                self.n_features,
                 self.n_components,
                 self.non_negative,
                 self.whiten,
@@ -356,7 +437,7 @@ class NonRecurrent(object):
         return (
             "NonRecurrent(n_features={}, n_components={}, non_negative={}, "
             "whiten={}, learning_rate={}, tau={})".format(
-                self.n_features_,
+                self.n_features,
                 self.n_components,
                 self.non_negative,
                 self.whiten,
@@ -365,4 +446,58 @@ class NonRecurrent(object):
             )
         )
 
-    _available_modes = ["naive"]
+    _available_modes = ["naive", "numba"]
+
+
+@njit
+def _perform_fit(
+    x: np.ndarray,
+    rate: np.ndarray,
+    tau: float,
+    scalings: np.ndarray,
+    non_negative: bool,
+    whiten: bool,
+    weights: np.ndarray,
+    lateral: np.ndarray,
+    output: np.ndarray,
+    history_weights: np.ndarray,
+    history_lateral: np.ndarray,
+    history_output: np.ndarray,
+):
+    n = len(x)
+    scalings_T = np.atleast_2d(scalings).T
+    scalings_2 = np.diag(scalings ** 2)
+    for i in range(n):
+        crt_x = x[i]
+        crt_rate = rate[i]
+
+        history_weights[i] = weights
+        history_lateral[i] = lateral
+        history_output[i] = output
+
+        # following the first steps from Algorithms 1 and 2 in Minden, Pehlevan,
+        # Chklovskii (2018).
+        diag_m = np.diag(lateral)
+        inv_diag_m = 1 / diag_m
+        # m_off = np.copy(lateral)
+        # np.fill_diagonal(m_off, 0)
+        m_off = lateral - np.diag(diag_m)
+
+        # the matrix multiplication by the diagonal M_d^{-1} matrix is equivalent to an
+        # element-wise multiplication using broadcast
+        y_tilde = inv_diag_m * (weights @ crt_x)
+
+        # now correcting for the off-diagonal terms
+        output[:] = y_tilde - inv_diag_m * (m_off @ y_tilde)
+
+        if non_negative:
+            output[output < 0] = 0
+
+        if crt_rate != 0:
+            weights += crt_rate * (np.outer(output, crt_x) - weights)
+
+            if not whiten:
+                scaled_m = scalings * lateral * scalings_T
+                lateral += (crt_rate / tau) * (np.outer(output, output) - scaled_m)
+            else:
+                lateral += (crt_rate / tau) * (np.outer(output, output) - scalings_2)
