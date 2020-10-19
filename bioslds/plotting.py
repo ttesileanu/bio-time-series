@@ -3,12 +3,27 @@
 import copy
 
 import numpy as np
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import seaborn as sns
 
 from matplotlib import patches
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from typing import Optional, Sequence, Tuple
+
+
+# set a default palette
+mpl.rcParams["axes.prop_cycle"] = mpl.cycler(
+    color=[
+        "#537EBA",  # glaucous
+        "#FF3C38",  # tart orange
+        "#81AD4A",  # bud green
+        "#A23E48",  # English red
+        "#FF8C42",  # mango tango
+        "#001021",  # rich black FOGRA 29
+        "#FFF275",  # corn
+    ]
+)
 
 
 class FigureManager(object):
@@ -20,7 +35,7 @@ class FigureManager(object):
         offset: float = 10,
         despine_kws: Optional[dict] = None,
         do_despine: bool = True,
-        **kwargs
+        **kwargs,
     ):
         """ Initialize the manager.
 
@@ -56,10 +71,7 @@ class FigureManager(object):
             default_figsize = plt.rcParams["figure.figsize"]
             kwargs["figsize"] = np.flip(args) * default_figsize
 
-        if (
-            "constrained_layout" not in kwargs
-            or not kwargs["constrained_layout"]
-        ):
+        if "constrained_layout" not in kwargs or not kwargs["constrained_layout"]:
             kwargs.setdefault("tight_layout", True)
 
         self.fig, self.ax = plt.subplots(*args, **kwargs)
@@ -92,7 +104,7 @@ def colorbar(
     fraction: float = 0.05,
     pad: float = 0.05,
     location: str = "right",
-    **kwargs
+    **kwargs,
 ):
     """ Add a colorbar to a plot so that the height of the colorbar matches the height
     of the figure.
@@ -238,11 +250,7 @@ def show_latent(
             next_idx = len(transitions) + 1
         while x0 + shift < bounds[1] and int(x0) < len(seq):
             crt_id = seq[int(x0)]
-            x1 = (
-                transitions[next_idx]
-                if next_idx < len(transitions)
-                else len(seq)
-            )
+            x1 = transitions[next_idx] if next_idx < len(transitions) else len(seq)
             x1 = min(x1, bounds[1] - shift)
             if x1 > x0:
                 patch = patches.Rectangle(
