@@ -21,7 +21,7 @@ class NonRecurrent(object):
     ----------
     n_components : int
         Number of components in the output.
-    learning_rate : float
+    rate : float
         Learning rate or learning rate schedule.
     tau : float
         Ratio between learning rates for feed-forward connection strengths and lateral
@@ -57,7 +57,7 @@ class NonRecurrent(object):
         weights: Optional[Sequence] = None,
         lateral: Optional[Sequence] = None,
         tau: float = 0.5,
-        learning_rate: Union[float, Sequence, Callable[[float], float]] = 0.001,
+        rate: Union[float, Sequence, Callable[[float], float]] = 0.001,
         scalings: Optional[Sequence] = None,
         non_negative: bool = False,
         whiten: bool = False,
@@ -84,7 +84,7 @@ class NonRecurrent(object):
         tau
             Ratio between learning rates for feed-forward connection strengths and
             lateral connection strengths, respectively.
-        learning_rate : float
+        rate : float
             Learning rate or learning schedule for feed-forward weights.  If this is a
             sequence, the `i`th element is used as the learning rate at the `i`th step.
             The last element is used for any steps beyond the length of the sequence. If
@@ -110,10 +110,10 @@ class NonRecurrent(object):
         self.non_negative = non_negative
         self.whiten = whiten
 
-        if callable(learning_rate) or not hasattr(learning_rate, "__len__"):
-            self.learning_rate = learning_rate
+        if callable(rate) or not hasattr(rate, "__len__"):
+            self.rate = rate
         else:
-            self.learning_rate = np.array(learning_rate)
+            self.rate = np.array(rate)
         self._learning_rate_vector = None
 
         # infer input and output dimensions
@@ -267,29 +267,29 @@ class NonRecurrent(object):
         """
         # figure out per-step rates
         n = len(X)
-        if callable(self.learning_rate):
+        if callable(self.rate):
             self._learning_rate_vector = np.array(
-                [self.learning_rate(self.n_samples_ + _) for _ in range(n)]
+                [self.rate(self.n_samples_ + _) for _ in range(n)]
             )
-        elif hasattr(self.learning_rate, "__len__"):
+        elif hasattr(self.rate, "__len__"):
             n0 = self.n_samples_
             n1 = n0 + n
-            if n1 <= len(self.learning_rate):
-                self._learning_rate_vector = self.learning_rate[n0:n1]
+            if n1 <= len(self.rate):
+                self._learning_rate_vector = self.rate[n0:n1]
             else:
-                if n0 < len(self.learning_rate):
-                    self._learning_rate_vector = self.learning_rate[n0:]
-                    n_extra = n1 - len(self.learning_rate)
+                if n0 < len(self.rate):
+                    self._learning_rate_vector = self.rate[n0:]
+                    n_extra = n1 - len(self.rate)
                 else:
                     self._learning_rate_vector = []
                     n_extra = n1 - n0
 
-                last_rate = self.learning_rate[-1]
+                last_rate = self.rate[-1]
                 self._learning_rate_vector = np.hstack(
                     (self._learning_rate_vector, n_extra * [last_rate])
                 )
         else:
-            self._learning_rate_vector = np.repeat(self.learning_rate, n)
+            self._learning_rate_vector = np.repeat(self.rate, n)
 
         if monitor is not None:
             monitor.setup(n)
@@ -431,17 +431,10 @@ class NonRecurrent(object):
 
     def clone(self):
         """ Make a clone of the current instance. """
-        clone = NonRecurrent(
-            n_features=self.n_features,
-            n_components=self.n_components,
-            weights=self.weights_,
-            lateral=self.lateral_,
-            tau=self.tau,
-            learning_rate=self.learning_rate,
-            scalings=self.scalings,
-            non_negative=self.non_negative,
-            whiten=self.whiten,
-        )
+        clone = NonRecurrent(n_features=self.n_features, n_components=self.n_components,
+                             weights=self.weights_, lateral=self.lateral_, tau=self.tau,
+                             rate=self.rate, scalings=self.scalings,
+                             non_negative=self.non_negative, whiten=self.whiten)
         clone.n_samples_ = self.n_samples_
         clone.output_ = np.copy(self.output_)
         return clone
@@ -449,13 +442,13 @@ class NonRecurrent(object):
     def __repr__(self):
         return (
             "NonRecurrent(n_features={}, n_components={}, non_negative={}, "
-            "whiten={}, learning_rate={}, tau={}, scalings={}, output_={},\n"
+            "whiten={}, rate={}, tau={}, scalings={}, output_={},\n"
             "weights_={},\nlateral_={})".format(
                 self.n_features,
                 self.n_components,
                 self.non_negative,
                 self.whiten,
-                self.learning_rate,
+                self.rate,
                 self.tau,
                 self.scalings,
                 self.output_,
@@ -467,12 +460,12 @@ class NonRecurrent(object):
     def __str__(self):
         return (
             "NonRecurrent(n_features={}, n_components={}, non_negative={}, "
-            "whiten={}, learning_rate={}, tau={})".format(
+            "whiten={}, rate={}, tau={})".format(
                 self.n_features,
                 self.n_components,
                 self.non_negative,
                 self.whiten,
-                self.learning_rate,
+                self.rate,
                 self.tau,
             )
         )
