@@ -216,6 +216,21 @@ class TestBioWTARegressorFitInferDefaultInit(unittest.TestCase):
 
         np.testing.assert_allclose(history.prediction_, history_alt.prediction_)
 
+    def test_monitor_output_matches_fit_infer_retval(self):
+        r, history = self.wta.fit_infer(
+            self.predictors, self.dependent, monitor=["output_"]
+        )
+        self.assertTrue(hasattr(history, "output_"))
+        np.testing.assert_allclose(history.output_, r)
+
+    def test_output_attribute_matches_fit_infer_retval(self):
+        r = self.wta.fit_infer(self.predictors[:-1], self.dependent[:-1])
+        np.testing.assert_allclose(r[-1], self.wta.output_)
+
+    def test_initial_output_is_all_zeros(self):
+        self.assertEqual(len(self.wta.output_), self.n_models)
+        np.testing.assert_allclose(self.wta.output_, 0)
+
     def test_progress_called(self):
         mock_progress = mock.MagicMock()
 

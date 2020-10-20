@@ -46,6 +46,9 @@ class BioWTARegressor(object):
         Transition matrix for the latent state, with `trans_mat[i, j]` being the
         probability of transitioning from latent state (model) `i` to latent state
         (model) `j` at every time step. Currently this is fixed and cannot be learned.
+    output_ : array of float, shape (n_models, )
+        Last latent state assignment. This corresponds to the last value returned from
+        `fit_infer`.
     """
 
     def __init__(
@@ -128,6 +131,8 @@ class BioWTARegressor(object):
                     ) + (p_diag - p_offdiag) * np.eye(self.n_models)
         else:
             self.trans_mat_ = np.ones((self.n_models, self.n_models)) / self.n_models
+
+        self.output_ = np.zeros(self.n_models)
 
         self._mode = "naive"
 
@@ -268,6 +273,7 @@ class BioWTARegressor(object):
             k = r0.argmax()
 
             self.prediction_ = crt_pred[k]
+            self.output_[:] = r[i]
             if monitor is not None:
                 monitor.record(self)
 
@@ -330,10 +336,13 @@ class BioWTARegressor(object):
                 pbar.update(crt_n)
             if monitor is not None:
                 monitor.record_batch(
-                    SimpleNamespace(weights_=crt_weights, prediction_=crt_predictions)
+                    SimpleNamespace(
+                        weights_=crt_weights, prediction_=crt_predictions, output_=crt_r
+                    )
                 )
 
             crt_last_r = crt_r[-1]
+            self.output_[:] = crt_last_r
 
         if pbar is not None:
             pbar.close()
