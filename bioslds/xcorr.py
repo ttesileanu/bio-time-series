@@ -3,7 +3,9 @@ scalar and a vector signal in an online fashion. """
 
 import numpy as np
 
-from typing import Sequence, Callable
+from types import SimpleNamespace
+from typing import Sequence, Callable, Optional
+from numba import njit
 
 from bioslds.monitor import AttributeMonitor
 
@@ -44,14 +46,15 @@ class OnlineCrosscorrelation(object):
         self.var_ = 1.0
         self.coef_ = np.zeros(self.n_components)
 
-        self._mode = "naive"
+        self._mode = "numba"
 
     def transform(
         self,
         X: Sequence,
         y: Sequence,
-        monitor: AttributeMonitor = None,
-        progress: Callable = None,
+        monitor: Optional[AttributeMonitor] = None,
+        progress: Optional[Callable] = None,
+        chunk_hint: int = 1000,
     ) -> np.ndarray:
         """ Calculate local cross-correlation for a pair of sequences.
 
@@ -75,6 +78,9 @@ class OnlineCrosscorrelation(object):
                 for i in range(100):
                     pbar.update(1)  # note that arg is step (=1), not i!
                 pbar.close()
+        chunk_hint
+            A hint about how to chunk the learning. This may or may not be used. If it
+            is, the progress function will only be called once per chunk.
 
         Returns an array of local estimates of the autocorrelation, with shape
         `(n_samples, n_components)`.
@@ -84,8 +90,27 @@ class OnlineCrosscorrelation(object):
         if monitor is not None:
             monitor.setup(n)
 
-        X = np.asarray(X)
+        X = np.asarray(X, dtype=float)
+        y = np.asarray(y, dtype=float)
 
+        fct_mapping = {
+            "naive": self._transform_naive,
+            "numba": self._transform_numba,
+        }
+        fct = fct_mapping[self._mode]
+
+        # noinspection PyArgumentList
+        return fct(X, y, progress=progress, monitor=monitor, chunk_hint=chunk_hint)
+
+    # noinspection PyUnusedLocal
+    def _transform_naive(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        monitor: Optional[AttributeMonitor],
+        progress: Optional[Callable],
+        chunk_hint: int,
+    ) -> np.ndarray:
         # set up the progress bar, if any
         if progress is not None:
             it_y = progress(y)
@@ -93,6 +118,7 @@ class OnlineCrosscorrelation(object):
             it_y = y
 
         # run the circuit
+        n = len(y)
         coef_history = np.zeros((n, self.n_components))
         for i, crt_y in enumerate(it_y):
             # record the current state using the attribute monitor, if it exists
@@ -110,6 +136,61 @@ class OnlineCrosscorrelation(object):
 
         return coef_history
 
+    def _transform_numba(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        monitor: Optional[AttributeMonitor],
+        progress: Optional[Callable],
+        chunk_hint: int,
+    ) -> np.ndarray:
+        if chunk_hint < 1:
+            chunk_hint = 1
+
+        # handle progress function
+        n = len(X)
+        if progress is not None:
+            pbar = progress(total=n)
+        else:
+            pbar = None
+
+        # set up monitor, if any
+        if monitor is not None:
+            monitor.setup(n)
+
+        coef_history = np.zeros((n, self.n_components))
+        for chunk_start in range(0, n, chunk_hint):
+            crt_range = slice(chunk_start, chunk_start + chunk_hint)
+            crt_X = X[crt_range]
+            crt_y = y[crt_range]
+            crt_n = len(crt_X)
+
+            crt_var_hist = np.zeros(crt_n)
+
+            final_var = _perform_transform(
+                crt_X,
+                crt_y,
+                self.rate,
+                self.var_,
+                self.coef_,
+                crt_var_hist,
+                coef_history[crt_range],
+            )
+            self.var_ = final_var
+
+            if pbar is not None:
+                pbar.update(crt_n)
+            if monitor is not None:
+                crt_history = SimpleNamespace(
+                    var_=crt_var_hist, coef_=coef_history[crt_range],
+                )
+                monitor.record_batch(crt_history)
+
+        if pbar is not None:
+            pbar.close()
+
+        return coef_history
+
     def __repr__(self):
         return (
             "OnlineCrosscorrelation(n_components={}, rate={}, " "var_={}, coef_={})"
@@ -120,4 +201,34 @@ class OnlineCrosscorrelation(object):
             self.n_components, self.rate
         )
 
-    _available_modes = ["naive"]
+    _available_modes = ["naive", "numba"]
+
+
+@njit
+def _perform_transform(
+    X: np.ndarray,
+    y: np.ndarray,
+    rate: float,
+    var: float,
+    coef: np.ndarray,
+    var_history: np.ndarray,
+    coef_history: np.ndarray,
+) -> float:
+    # run the circuit
+    n = len(y)
+    for i in range(n):
+        var_history[i] = var
+        coef_history[i, :] = coef
+
+        crt_x = X[i]
+        crt_y = y[i]
+
+        coef_history[i, :] = coef
+
+        # update the cross-correlation
+        coef += rate * ((crt_y / var) * crt_x - coef)
+
+        # update the variance
+        var += rate * (crt_y ** 2 - var)
+
+    return var
