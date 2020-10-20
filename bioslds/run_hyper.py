@@ -29,7 +29,7 @@ def make_bio_wta_with_stable_initial(*args, **kwargs) -> BioWTARegressor:
         make_random_arma(kwargs["n_features"], 0, rng=kwargs["rng"]).a
         for _ in range(kwargs["n_models"])
     ]
-    return BioWTARegressor(*args, **kwargs, weights=weights)
+    return BioWTARegressor(weights=weights, **kwargs)
 
 
 def run_kmeans_hyper_optimize(
@@ -57,7 +57,7 @@ def run_kmeans_hyper_optimize(
             unordered_accuracy_score,
             n_models=len(dataset.armas[0]),
             n_features=n_features,
-            rate_weights=kwargs["rate"],
+            rate=kwargs["rate"],
             trans_mat=1 - 1 / kwargs["exp_streak"],
             rng=clusterer_seed,
             progress=slow_tqdm,

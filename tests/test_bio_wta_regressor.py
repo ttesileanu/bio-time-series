@@ -20,8 +20,8 @@ class TestBioWTARegressorInit(unittest.TestCase):
     def test_n_features_attribute(self):
         self.assertEqual(self.wta.n_features, self.n_features)
 
-    def test_default_rate_weights(self):
-        np.testing.assert_allclose(self.wta.rate_weights, 1e-3)
+    def test_default_rate(self):
+        np.testing.assert_allclose(self.wta.rate, 1e-3)
 
     def test_default_weights_shape(self):
         self.assertEqual(np.ndim(self.wta.weights_), 2)
@@ -155,7 +155,7 @@ class TestBioWTARegressorFitInferDefaultInit(unittest.TestCase):
 
         dw = (self.wta.weights_ - weights0)[k]
         eps_k = self.dependent[0] - np.dot(weights0[k], self.predictors[0])
-        dw_exp = self.wta.rate_weights * self.predictors[0] * eps_k
+        dw_exp = self.wta.rate * self.predictors[0] * eps_k
 
         np.testing.assert_allclose(dw, dw_exp)
 
@@ -258,7 +258,7 @@ class TestBioWTARegressorStrAndRepr(unittest.TestCase):
         s = repr(self.wta)
         s_exp = (
             f"BioWTARegressor(n_models={self.n_models}, n_features="
-            f"{self.n_features}, rate_weights={self.wta.rate_weights}, weights_="
+            f"{self.n_features}, rate={self.wta.rate}, weights_="
             f"{repr(self.wta.weights_)})"
         )
 
@@ -541,14 +541,12 @@ class TestBioWTARegressorVectorLearningRate(unittest.TestCase):
 
         self.rate = 0.005
 
-        self.wta_full = BioWTARegressor(
-            self.n_models, self.n_features, rate_weights=self.rate
-        )
+        self.wta_full = BioWTARegressor(self.n_models, self.n_features, rate=self.rate)
         self.r_full = self.wta_full.fit_infer(self.predictors, self.dependent)
 
         self.n_partial = self.n_samples // 2
         self.wta_partial = BioWTARegressor(
-            self.n_models, self.n_features, rate_weights=self.rate
+            self.n_models, self.n_features, rate=self.rate
         )
         self.r_partial = self.wta_partial.fit_infer(
             self.predictors[: self.n_partial], self.dependent[: self.n_partial]
@@ -562,7 +560,7 @@ class TestBioWTARegressorVectorLearningRate(unittest.TestCase):
     def test_switching_rate_to_zero_fixes_weights(self):
         schedule = np.zeros(self.n_samples)
         schedule[: self.n_partial] = self.rate
-        wta = BioWTARegressor(self.n_models, self.n_features, rate_weights=schedule)
+        wta = BioWTARegressor(self.n_models, self.n_features, rate=schedule)
 
         wta.fit_infer(self.predictors, self.dependent)
 
@@ -571,7 +569,7 @@ class TestBioWTARegressorVectorLearningRate(unittest.TestCase):
     def test_resulting_r_same_if_rate_is_constant_then_switches(self):
         schedule = np.zeros(self.n_samples)
         schedule[: self.n_partial] = self.rate
-        wta = BioWTARegressor(self.n_models, self.n_features, rate_weights=schedule)
+        wta = BioWTARegressor(self.n_models, self.n_features, rate=schedule)
 
         r = wta.fit_infer(self.predictors, self.dependent)
         np.testing.assert_allclose(r[: self.n_partial], self.r_partial)
@@ -583,10 +581,8 @@ class TestBioWTARegressorVectorLearningRate(unittest.TestCase):
             (schedule_short, (self.n_samples - n) * [schedule_short[-1]])
         )
 
-        wta1 = BioWTARegressor(
-            self.n_models, self.n_features, rate_weights=schedule_short
-        )
-        wta2 = BioWTARegressor(self.n_models, self.n_features, rate_weights=schedule)
+        wta1 = BioWTARegressor(self.n_models, self.n_features, rate=schedule_short)
+        wta2 = BioWTARegressor(self.n_models, self.n_features, rate=schedule)
 
         wta1.fit_infer(self.predictors, self.dependent)
         wta2.fit_infer(self.predictors, self.dependent)
@@ -595,7 +591,7 @@ class TestBioWTARegressorVectorLearningRate(unittest.TestCase):
 
     def test_constructor_copies_weight_schedule(self):
         schedule = self.rate * np.ones(self.n_samples)
-        wta = BioWTARegressor(self.n_models, self.n_features, rate_weights=schedule)
+        wta = BioWTARegressor(self.n_models, self.n_features, rate=schedule)
 
         schedule[:] = 0
         wta.fit_infer(self.predictors, self.dependent)
@@ -616,10 +612,10 @@ class TestBioWTARegressorCallableLearningRate(unittest.TestCase):
         def rate_fct(i):
             return 1 / (1 + 0.5 * i)
 
-        wta1 = BioWTARegressor(n_models, n_features, rate_weights=rate_fct)
+        wta1 = BioWTARegressor(n_models, n_features, rate=rate_fct)
 
         schedule = [rate_fct(_) for _ in range(n_samples)]
-        wta2 = BioWTARegressor(n_models, n_features, rate_weights=schedule)
+        wta2 = BioWTARegressor(n_models, n_features, rate=schedule)
 
         wta1.fit_infer(predictors, dependent)
         wta2.fit_infer(predictors, dependent)
@@ -640,8 +636,8 @@ class TestBioWTARegressorCallableLearningRate(unittest.TestCase):
         def rate_fct(_):
             return rate
 
-        wta1 = BioWTARegressor(n_models, n_features, rate_weights=rate_fct)
-        wta2 = BioWTARegressor(n_models, n_features, rate_weights=rate)
+        wta1 = BioWTARegressor(n_models, n_features, rate=rate_fct)
+        wta2 = BioWTARegressor(n_models, n_features, rate=rate)
 
         wta1.fit_infer(predictors, dependent)
         wta2.fit_infer(predictors, dependent)

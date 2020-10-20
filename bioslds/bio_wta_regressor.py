@@ -33,7 +33,7 @@ class BioWTARegressor(object):
         Number of models in mixture.
     n_features : int
         Number of predictor variables (features).
-    rate_weights : float, np.ndarray, callable
+    rate : float, np.ndarray, callable
         Learning rate or learning schedule for the regression weights.
     weights_ : array, shape `(n_models, n_features)`
         Regression weights for each of the models.
@@ -55,7 +55,7 @@ class BioWTARegressor(object):
         self,
         n_models: int,
         n_features: int,
-        rate_weights: Union[float, Sequence, Callable[[float], float]] = 1e-3,
+        rate: Union[float, Sequence, Callable[[float], float]] = 1e-3,
         rng: Union[int, np.random.RandomState, np.random.Generator] = 0,
         weights: Optional[Sequence] = None,
         start_prob: Optional[Sequence] = None,
@@ -69,7 +69,7 @@ class BioWTARegressor(object):
             Number of models in mixture.
         n_features
             Number of predictor variables (features).
-        rate_weights
+        rate
             Learning rate or learning schedule for the regression weights. If this is a
             sequence, the `i`th element is used as the learning rate at the `i`th step.
             The last element is used for any steps beyond the length of the sequence.
@@ -96,11 +96,11 @@ class BioWTARegressor(object):
         self.n_models = n_models
         self.n_features = n_features
 
-        if callable(rate_weights) or not hasattr(rate_weights, "__len__"):
-            self.rate_weights = rate_weights
+        if callable(rate) or not hasattr(rate, "__len__"):
+            self.rate = rate
         else:
-            self.rate_weights = np.array(rate_weights)
-        self._rate_weights_vector = None
+            self.rate = np.array(rate)
+        self._rate_vector = None
 
         # handle integer seeds
         if isinstance(rng, int):
@@ -206,21 +206,17 @@ class BioWTARegressor(object):
 
         # figure out per-step rates
         n = len(y)
-        if callable(self.rate_weights):
-            self._rate_weights_vector = np.array(
-                [self.rate_weights(_) for _ in range(n)]
-            )
-        elif hasattr(self.rate_weights, "__len__"):
-            if n <= len(self.rate_weights):
-                self._rate_weights_vector = self.rate_weights[:n]
+        if callable(self.rate):
+            self._rate_vector = np.array([self.rate(_) for _ in range(n)])
+        elif hasattr(self.rate, "__len__"):
+            if n <= len(self.rate):
+                self._rate_vector = self.rate[:n]
             else:
-                n_extra = n - len(self.rate_weights)
-                last_rate = self.rate_weights[-1]
-                self._rate_weights_vector = np.hstack(
-                    (self.rate_weights, n_extra * [last_rate])
-                )
+                n_extra = n - len(self.rate)
+                last_rate = self.rate[-1]
+                self._rate_vector = np.hstack((self.rate, n_extra * [last_rate]))
         else:
-            self._rate_weights_vector = np.repeat(self.rate_weights, n)
+            self._rate_vector = np.repeat(self.rate, n)
 
         # noinspection PyArgumentList
         fct(
@@ -277,8 +273,8 @@ class BioWTARegressor(object):
             if monitor is not None:
                 monitor.record(self)
 
-            crt_rate_weights = self._rate_weights_vector[i]
-            dw = (crt_rate_weights * crt_eps[k]) * crt_x
+            crt_rate = self._rate_vector[i]
+            dw = (crt_rate * crt_eps[k]) * crt_x
             self.weights_[k] += dw
 
             last_k = k
@@ -324,7 +320,7 @@ class BioWTARegressor(object):
                 crt_y,
                 crt_r,
                 np.copy(self.weights_),
-                self._rate_weights_vector,
+                self._rate_vector,
                 crt_last_r,
                 log_start_prob,
                 log_trans_mat,
@@ -350,7 +346,7 @@ class BioWTARegressor(object):
     def __repr__(self) -> str:
         r = (
             f"BioWTARegressor(n_models={self.n_models}, n_features"
-            f"={self.n_features}, rate_weights={self.rate_weights}, weights_="
+            f"={self.n_features}, rate={self.rate}, weights_="
             f"{repr(self.weights_)})"
         )
 
