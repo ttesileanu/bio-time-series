@@ -84,7 +84,7 @@ class NonRecurrent(object):
         tau
             Ratio between learning rates for feed-forward connection strengths and
             lateral connection strengths, respectively.
-        rate : float
+        rate
             Learning rate or learning schedule for feed-forward weights.  If this is a
             sequence, the `i`th element is used as the learning rate at the `i`th step.
             The last element is used for any steps beyond the length of the sequence. If
