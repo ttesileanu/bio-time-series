@@ -10,13 +10,13 @@ from bioslds.xcorr import OnlineCrosscorrelation
 
 class TestOnlineCrosscorrelationTransformMonitor(unittest.TestCase):
     def setUp(self):
-        self.n_components = 3
+        self.n_features = 3
         self.rate = 0.05
-        self.xcorr = OnlineCrosscorrelation(self.n_components, rate=self.rate)
+        self.xcorr = OnlineCrosscorrelation(self.n_features, rate=self.rate)
 
         self.rng = np.random.default_rng(1)
         self.n_samples = 53
-        self.x = self.rng.normal(size=(self.n_samples, self.n_components))
+        self.x = self.rng.normal(size=(self.n_samples, self.n_features))
         self.y = self.rng.normal(size=self.n_samples)
 
     def test_initial_variance_is_one(self):
@@ -51,7 +51,7 @@ class TestOnlineCrosscorrelationTransformMonitor(unittest.TestCase):
 
         self.xcorr.transform(self.x, self.y, monitor=monitor)
 
-        acorr_alt = OnlineCrosscorrelation(self.n_components, rate=self.rate)
+        acorr_alt = OnlineCrosscorrelation(self.n_features, rate=self.rate)
         var_exp = np.zeros(self.n_samples)
         for i in range(self.n_samples):
             var_exp[i] = acorr_alt.var_
@@ -65,7 +65,7 @@ class TestOnlineCrosscorrelationTransformMonitor(unittest.TestCase):
 
         self.xcorr.transform(self.x, self.y, monitor=monitor, chunk_hint=13)
 
-        xcorr_alt = OnlineCrosscorrelation(self.n_components, rate=self.rate)
+        xcorr_alt = OnlineCrosscorrelation(self.n_features, rate=self.rate)
         monitor_alt = AttributeMonitor(names)
         xcorr_alt.transform(self.x, self.y, monitor=monitor_alt, chunk_hint=2)
 
@@ -75,13 +75,13 @@ class TestOnlineCrosscorrelationTransformMonitor(unittest.TestCase):
 
 class TestOnlineCrosscorrelationTransformCorrectness(unittest.TestCase):
     def setUp(self):
-        self.n_components = 4
+        self.n_features = 4
         self.rate = 0.03
-        self.xcorr = OnlineCrosscorrelation(self.n_components, rate=self.rate)
+        self.xcorr = OnlineCrosscorrelation(self.n_features, rate=self.rate)
 
         self.rng = np.random.default_rng(3)
         self.n_samples = 49
-        self.x = self.rng.normal(size=(self.n_samples, self.n_components))
+        self.x = self.rng.normal(size=(self.n_samples, self.n_features))
         self.y = self.rng.normal(size=self.n_samples)
 
     def test_reference_implementation_for_variance_estimate(self):
@@ -134,9 +134,9 @@ class TestOnlineCrosscorrelationTransformCorrectness(unittest.TestCase):
 
 class TestOnlineCrosscorrelationStrAndRepr(unittest.TestCase):
     def setUp(self):
-        self.n_components = 4
+        self.n_features = 4
         self.rate = 0.03
-        self.xcorr = OnlineCrosscorrelation(self.n_components, rate=self.rate)
+        self.xcorr = OnlineCrosscorrelation(self.n_features, rate=self.rate)
 
     def test_repr(self):
         s = repr(self.xcorr)
@@ -144,7 +144,7 @@ class TestOnlineCrosscorrelationStrAndRepr(unittest.TestCase):
         self.assertTrue(s.startswith("OnlineCrosscorrelation("))
         self.assertTrue(s.endswith(")"))
 
-        self.assertIn("n_components=", s)
+        self.assertIn("n_features=", s)
         self.assertIn("rate=", s)
         self.assertIn("var_=", s)
         self.assertIn("coef_=", s)
@@ -155,7 +155,7 @@ class TestOnlineCrosscorrelationStrAndRepr(unittest.TestCase):
         self.assertTrue(s.startswith("OnlineCrosscorrelation("))
         self.assertTrue(s.endswith(")"))
 
-        self.assertIn("n_components=", s)
+        self.assertIn("n_features=", s)
         self.assertIn("rate=", s)
         self.assertNotIn("var_=", s)
         self.assertNotIn("coef_=", s)
@@ -163,19 +163,19 @@ class TestOnlineCrosscorrelationStrAndRepr(unittest.TestCase):
 
 class TestOnlineCrosscorrelationChunkHintDoesNotAffectResult(unittest.TestCase):
     def setUp(self):
-        self.n_components = 4
+        self.n_features = 4
         self.rate = 0.03
-        self.xcorr = OnlineCrosscorrelation(self.n_components, rate=self.rate)
+        self.xcorr = OnlineCrosscorrelation(self.n_features, rate=self.rate)
 
         self.rng = np.random.default_rng(3)
         self.n_samples = 49
-        self.x = self.rng.normal(size=(self.n_samples, self.n_components))
+        self.x = self.rng.normal(size=(self.n_samples, self.n_features))
         self.y = self.rng.normal(size=self.n_samples)
 
     def test_small_chunk_same_as_no_chunk(self):
         res = self.xcorr.transform(self.x, self.y)
 
-        xcorr_alt = OnlineCrosscorrelation(self.n_components, rate=self.rate)
+        xcorr_alt = OnlineCrosscorrelation(self.n_features, rate=self.rate)
         res_alt = xcorr_alt.transform(self.x, self.y, chunk_hint=12)
 
         np.testing.assert_allclose(res, res)

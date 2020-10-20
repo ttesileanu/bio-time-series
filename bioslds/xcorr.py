@@ -13,11 +13,14 @@ from bioslds.monitor import AttributeMonitor
 class OnlineCrosscorrelation(object):
     """ Keep track of local cross-correlation profile of a pair of signals.
 
+    One of the signals is one-dimensional, while the other is multi-dimensional.
+
     Attributes
     ----------
-    n_components : int
-        Number of components in the output. This is equal to the number of non-zero lags
-        at which to estimate the cross-correlation.
+    n_features : int
+        Number of components in the multi-dimensional input.
+    n_features : int
+        Number of components in the output. This is always equal to `n_features`.
     rate : float
         Learning rate for the cross-correlation estimate.
     var_ : float
@@ -27,24 +30,25 @@ class OnlineCrosscorrelation(object):
     """
 
     def __init__(
-        self, n_components: int, rate: float = 0.1,
+        self, n_features: int, rate: float = 0.1,
     ):
         """ Initialize the cross-correlation learner.
 
         Parameters
         ----------
-        n_components
-            Number of components in the output. This is equal to the number of non-zero
-            lags at which the cross-correlation is estimated.
+        n_features
+            Number of components in the multi-dimensional input. This is also equal to
+            the number of output dimensions.
         rate
             Learning rate for the cross-correlation estimate.
         """
-        self.n_components = n_components
+        self.n_features = n_features
+        self.n_components = n_features
         self.rate = rate
 
         # initialize state variables
         self.var_ = 1.0
-        self.coef_ = np.zeros(self.n_components)
+        self.coef_ = np.zeros(self.n_features)
 
         self._mode = "numba"
 
@@ -62,7 +66,7 @@ class OnlineCrosscorrelation(object):
         ----------
         X : Sequence
             Sequence of higher-dimensional inputs. This has shape `(n_samples,
-            n_components)`.
+            n_features)`.
         y : Sequence
             Sequence of one-dimensional inputs, of length `n_samples`.
         monitor
@@ -193,12 +197,12 @@ class OnlineCrosscorrelation(object):
 
     def __repr__(self):
         return (
-            "OnlineCrosscorrelation(n_components={}, rate={}, " "var_={}, coef_={})"
-        ).format(self.n_components, self.rate, self.var_, self.coef_)
+            "OnlineCrosscorrelation(n_features={}, rate={}, " "var_={}, coef_={})"
+        ).format(self.n_features, self.rate, self.var_, self.coef_)
 
     def __str__(self):
-        return "OnlineCrosscorrelation(n_components={}, rate={})".format(
-            self.n_components, self.rate
+        return "OnlineCrosscorrelation(n_features={}, rate={})".format(
+            self.n_features, self.rate
         )
 
     _available_modes = ["naive", "numba"]
