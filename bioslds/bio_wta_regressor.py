@@ -134,7 +134,7 @@ class BioWTARegressor(object):
 
         self.output_ = np.zeros(self.n_models)
 
-        self._mode = "naive"
+        self._mode = "numba"
 
     def fit_infer(
         self,
