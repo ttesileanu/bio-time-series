@@ -11,23 +11,34 @@ import numpy as np
 
 class TestAttributeMonitorInit(unittest.TestCase):
     def setUp(self):
-        self.keys = ["foo", "bar", "x.y"]
+        self.keys = ["foo", "bar", "x_y", "y.x"]
         self.monitor = AttributeMonitor(self.keys)
 
     def test_constructor_default_step_is_one(self):
         self.assertEqual(self.monitor.step, 1)
 
-    def test_setup_makes_history_keys_for_all_attributes(self):
+    def test_setup_makes_history_keys_for_all_attributes_without_dots(self):
         self.monitor.setup(3)
 
-        is_in_history = [key in self.monitor.history_.__dict__ for key in self.keys]
+        is_in_history = [
+            key in self.monitor.history_.__dict__ for key in self.keys if "." not in key
+        ]
         self.assertTrue(all(is_in_history))
 
-    def test_setup_makes_none_histories_for_all_attributes(self):
+    def test_setup_makes_none_histories_for_all_attributes_without_dots(self):
         self.monitor.setup(4)
 
-        is_none = [self.monitor.history_.__dict__[key] is None for key in self.keys]
+        is_none = [
+            self.monitor.history_.__dict__[key] is None
+            for key in self.keys
+            if "." not in key
+        ]
         self.assertTrue(all(is_none))
+
+    def test_setup_makes_hierarchical(self):
+        self.monitor.setup(1)
+        self.assertTrue(hasattr(self.monitor.history_, "y"))
+        self.assertTrue(hasattr(self.monitor.history_.y, "x"))
 
 
 class TestAttributeMonitorTypes(unittest.TestCase):
@@ -265,7 +276,7 @@ class TestAttributeMonitorRecordBatch(unittest.TestCase):
         i = 0
         while i < self.n:
             k = min(rng.integers(1, 10), self.n - i)
-            crt_v = v[i: i + k]
+            crt_v = v[i : i + k]
             obj_batch = SimpleNamespace(x=crt_v)
             monitor_alt.record_batch(obj_batch)
 
@@ -291,6 +302,36 @@ class TestAttributeMonitorRecordBatch(unittest.TestCase):
         monitor.record_batch(obj)
 
         self.assertEqual(len(monitor.history_.__dict__), 0)
+
+
+class TestAttributeMonitorHierarchical(unittest.TestCase):
+    def setUp(self):
+        self.n = 60
+        self.names = ["obj.y"]
+        self.rng = np.random.default_rng(0)
+        self.y = self.rng.normal(size=self.n)
+
+        self.monitor = AttributeMonitor(self.names)
+        self.monitor.setup(self.n)
+
+    def test_record_works_correctly(self):
+        for i in range(self.n):
+            tracked = SimpleNamespace(obj=SimpleNamespace(y=self.y[i]))
+            self.monitor.record(tracked)
+
+        self.assertTrue(hasattr(self.monitor.history_, "obj"))
+        self.assertTrue(hasattr(self.monitor.history_.obj, "y"))
+        np.testing.assert_allclose(self.monitor.history_.obj.y, self.y)
+
+    def test_record_batch_works_correctly(self):
+        chunk_size = 13
+        for i in range(0, self.n, chunk_size):
+            tracked = SimpleNamespace(obj=SimpleNamespace(y=self.y[i : i + chunk_size]))
+            self.monitor.record_batch(tracked)
+
+        self.assertTrue(hasattr(self.monitor.history_, "obj"))
+        self.assertTrue(hasattr(self.monitor.history_.obj, "y"))
+        np.testing.assert_allclose(self.monitor.history_.obj.y, self.y)
 
 
 if __name__ == "__main__":

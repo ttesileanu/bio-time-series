@@ -67,7 +67,9 @@ class AttributeMonitor(object):
         self.n_ = n
         self.t_ = 0
         self.i_ = 0
-        self.history_ = SimpleNamespace(**{name: None for name in self.names})
+        self.history_ = SimpleNamespace()
+        for name in self.names:
+            _hier_setattr(self.history_, name, None)
 
     def record(self, obj: object):
         """ Store the current state of the attributes that are being followed, assuming
@@ -80,9 +82,9 @@ class AttributeMonitor(object):
         """
         # initialize storage if necessary
         for name in self.names:
-            value = getattr(obj, name)
+            value = _hier_getattr(obj, name)
 
-            if getattr(self.history_, name) is None:
+            if _hier_getattr(self.history_, name) is None:
                 # figure out the data type
                 dtype = np.asarray(value).dtype
                 # convert things like strings to dtype object
@@ -92,19 +94,20 @@ class AttributeMonitor(object):
                 # allocate space
                 shape = np.shape(value)
                 n_elements = (self.n_ - 1) // self.step + 1
-                setattr(
+                _hier_setattr(
                     self.history_, name, np.zeros((n_elements,) + shape, dtype=dtype),
                 )
 
         if self.t_ % self.step == 0:
             # store if we need to
             for name in self.names:
-                value = getattr(obj, name)
+                value = _hier_getattr(obj, name)
+                hist_values = _hier_getattr(self.history_, name)
 
                 # make sure to make copies of object values!
-                if getattr(self.history_, name).dtype == np.object:
+                if hist_values.dtype == np.object:
                     value = copy.copy(value)
-                getattr(self.history_, name)[self.i_] = value
+                hist_values[self.i_] = value
 
             self.i_ += 1
 
@@ -126,7 +129,7 @@ class AttributeMonitor(object):
             return
 
         # check the number of elements in this batch
-        lengths = [len(getattr(obj, name)) for name in self.names]
+        lengths = [len(_hier_getattr(obj, name)) for name in self.names]
         n = lengths[0]
         if not all(_ == n for _ in lengths[1:]):
             raise ValueError("All variables in a batch should have the same length.")
@@ -137,10 +140,10 @@ class AttributeMonitor(object):
 
         # initialize storage if necessary
         for name in self.names:
-            value_list = getattr(obj, name)
+            value_list = _hier_getattr(obj, name)
             value = value_list[0]
 
-            if getattr(self.history_, name) is None:
+            if _hier_getattr(self.history_, name) is None:
                 # figure out the data type
                 dtype = np.asarray(value).dtype
                 # convert things like strings to dtype object
@@ -150,7 +153,7 @@ class AttributeMonitor(object):
                 # allocate space
                 shape = np.shape(value)
                 n_elements = (self.n_ - 1) // self.step + 1
-                setattr(
+                _hier_setattr(
                     self.history_, name, np.zeros((n_elements,) + shape, dtype=dtype),
                 )
 
@@ -158,10 +161,11 @@ class AttributeMonitor(object):
         mask = (np.arange(self.t_, self.t_ + n) % self.step) == 0
         n_masked = np.sum(mask)
         for name in self.names:
-            value_list = getattr(obj, name)
+            value_list = _hier_getattr(obj, name)
+            hist_values = _hier_getattr(self.history_, name)
 
             # make sure to make copies of object values!
-            if getattr(self.history_, name).dtype == np.object:
+            if hist_values.dtype == np.object:
                 value_list_masked = [copy.copy(obj) for obj, b in zip(value_list, mask)]
             else:
                 if self.step == 1:
@@ -169,9 +173,7 @@ class AttributeMonitor(object):
                 else:
                     value_list_masked = np.asarray(value_list)[mask]
 
-            getattr(self.history_, name)[
-                self.i_ : self.i_ + n_masked
-            ] = value_list_masked
+            hist_values[self.i_ : self.i_ + n_masked] = value_list_masked
 
         self.i_ += n_masked
         self.t_ += n
@@ -192,3 +194,55 @@ class AttributeMonitor(object):
         )
 
         return r
+
+
+def _hier_getattr(obj, name: str):
+    """ Get an attribute of an object, following a hierarchy of objects.
+
+    Parameter
+    ---------
+    obj
+        Object to read from.
+    name
+        The attribute to read. If this contains a dot ("."), it is assumed to be a sub-
+        attribute of an attribute.
+
+    Returns the attribute's value. Raises `AttributeError` if any part of the hierarchy
+    does not exist.
+    """
+    path = name.split(sep=".")
+    value = obj
+    for sub_obj in path:
+        value = getattr(value, sub_obj)
+
+    return value
+
+
+def _hier_setattr(obj: SimpleNamespace, name: str, value):
+    """ Set an attribute of an object, following a hierarchy of objects.
+
+    This creates any missing sub-objects in the hierarchy, using `SimpleNamespace`.
+
+    Parameter
+    ---------
+    obj
+        Object to write to.
+    name
+        The attribute to write. If this contains a dot ("."), it is assumed to be a sub-
+        attribute of an attribute.
+    value
+        Value to assign to the attribute.
+
+    Write the attribute's value.
+    """
+    path = name.split(sep=".")
+    crt_obj = obj
+    for sub_obj in path[:-1]:
+        try:
+            crt_obj = getattr(crt_obj, sub_obj)
+        except AttributeError:
+            new_obj = SimpleNamespace()
+            setattr(crt_obj, sub_obj, new_obj)
+            crt_obj = new_obj
+
+    setattr(crt_obj, path[-1], value)
