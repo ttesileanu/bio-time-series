@@ -390,7 +390,7 @@ class TestNonRecurrentFitNonnegativeWithPCScalings(unittest.TestCase):
             np.testing.assert_allclose(self.circuit.lateral_, expected_m)
 
 
-class TestNonRecurrentPartialFit(unittest.TestCase):
+class TestNonRecurrentFitInfer(unittest.TestCase):
     def setUp(self):
         self.rng = np.random.default_rng(3)
 
@@ -413,6 +413,15 @@ class TestNonRecurrentPartialFit(unittest.TestCase):
             scalings=self.pc_scalings,
         )
         self.circuit = NonRecurrent(**self.kwargs)
+
+        self.n_samples = 85
+        self.x = self.rng.normal(size=(self.n_samples, self.input_dim))
+
+    def test_fit_infer_returns_same_as_monitor_output(self):
+        monitor = AttributeMonitor(["output_"])
+        res = self.circuit.fit_infer(self.x, monitor=monitor)
+
+        np.testing.assert_allclose(res, monitor.history_.output_)
 
 
 class TestNonRecurrentClone(unittest.TestCase):

@@ -208,15 +208,37 @@ class NonRecurrent(object):
     def fit(
         self,
         X: Sequence,
+        **kwargs
+    ) -> "NonRecurrent":
+        """ Feed data to the circuit, updating the output and the weights.
+
+        This calls `fit_infer`, passing all keyword arguments, and ignores the output.
+
+        Parameters
+        ----------
+        X
+            Dataset to feed into the circuit. Shape `(n_samples, n_features)`.
+        All other keyword arguments are passed to `fit_infer`.
+
+        Returns `self`.
+        """
+        self.fit_infer(X, **kwargs)
+
+        return self
+
+    # noinspection PyUnusedLocal
+    def fit_infer(
+        self,
+        X: Sequence,
         y: None = None,
         progress: Optional[Callable] = None,
         monitor: Optional[AttributeMonitor] = None,
         chunk_hint: int = 1000,
-    ) -> "NonRecurrent":
+    ) -> np.ndarray:
         """ Feed data to the circuit, updating the output and the weights.
 
-        Note that in this implementation, the non-negativity of the outputs is
-        enforced before the synaptic plasticity updates take place.
+        Note that in this implementation, the non-negativity of the outputs is enforced
+        before the synaptic plasticity updates take place.
 
         Parameters
         ----------
@@ -279,18 +301,22 @@ class NonRecurrent(object):
         fct = fct_mapping[self._mode]
 
         # noinspection PyArgumentList
-        fct(X, progress=progress, monitor=monitor, chunk_hint=chunk_hint)
+        res = fct(X, progress=progress, monitor=monitor, chunk_hint=chunk_hint)
 
-        return self
+        return res
 
     # noinspection PyUnusedLocal
-    def _fit_naive(self, X: Sequence, progress, monitor, chunk_hint: int):
+    def _fit_naive(self, X: Sequence, progress, monitor, chunk_hint: int) -> np.ndarray:
         it = X if progress is None else progress(X)
+        out_history = np.zeros((len(X), self.n_components))
         for i, x in enumerate(it):
+            out_history[i] = self.output_
             if monitor is not None:
                 monitor.record(self)
 
             self._feed(x, self._learning_rate_vector[i])
+
+        return out_history
 
     def _fit_numba(
         self,
@@ -298,7 +324,7 @@ class NonRecurrent(object):
         progress: Optional[Callable],
         monitor: Optional[AttributeMonitor],
         chunk_hint: int,
-    ):
+    ) -> np.ndarray:
         if chunk_hint < 1:
             chunk_hint = 1
 
@@ -314,6 +340,7 @@ class NonRecurrent(object):
             monitor.setup(n)
 
         X = np.asarray(X, dtype=float)
+        out_history = np.zeros((len(X), self.n_components))
         for chunk_start in range(0, n, chunk_hint):
             crt_range = slice(chunk_start, chunk_start + chunk_hint)
             crt_X = X[crt_range]
@@ -321,10 +348,12 @@ class NonRecurrent(object):
 
             crt_weights = np.zeros((crt_n, self.n_components, self.n_features))
             crt_lateral = np.zeros((crt_n, self.n_components, self.n_components))
-            crt_output = np.zeros((crt_n, self.n_components))
+            # crt_output = np.zeros((crt_n, self.n_components))
 
             crt_history = SimpleNamespace(
-                weights_=crt_weights, lateral_=crt_lateral, output_=crt_output
+                weights_=crt_weights,
+                lateral_=crt_lateral,
+                output_=out_history[crt_range],
             )
 
             self._fit_numba_chunk(crt_X, crt_range=crt_range, crt_history=crt_history)
@@ -336,6 +365,8 @@ class NonRecurrent(object):
 
         if pbar is not None:
             pbar.close()
+
+        return out_history
 
     def _fit_numba_chunk(
         self, X: np.ndarray, crt_range: slice, crt_history: SimpleNamespace
