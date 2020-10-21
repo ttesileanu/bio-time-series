@@ -29,9 +29,7 @@ class OnlineCrosscorrelation(object):
         Running estimate of the cross-correlation at a number of lags.
     """
 
-    def __init__(
-        self, n_features: int, rate: float = 0.1,
-    ):
+    def __init__(self, n_features: int, rate: float = 0.1):
         """ Initialize the cross-correlation learner.
 
         Parameters
