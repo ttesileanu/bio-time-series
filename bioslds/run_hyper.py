@@ -45,6 +45,7 @@ def run_hyper_optimize(
     exp_streak_log: bool,
     monitor: list,
     monitor_step: int,
+    economy: bool,
 ) -> Tuple[float, dict, dict]:
     # handle log-scale options
     log_scale = []
@@ -68,24 +69,34 @@ def run_hyper_optimize(
     if algo == "biowta":
 
         def fct(**kwargs):
-            return hyper_score_ar(
+            res = hyper_score_ar(
                 make_bio_wta_with_stable_initial,
                 *common_hyper_args,
                 rate=kwargs["rate"],
                 trans_mat=1 - 1 / kwargs["exp_streak"],
                 **common_hyper_kws,
             )
+            if economy:
+                del res[1].regressors
+                if len(monitor) == 0:
+                    del res[1].history
+            return res
 
     elif algo == "xcorr":
 
         def fct(**kwargs):
-            return hyper_score_ar(
+            res = hyper_score_ar(
                 CrosscorrelationRegressor,
                 *common_hyper_args,
                 nsm_rate=kwargs["rate"],
                 xcorr_rate=1 / kwargs["exp_streak"],
                 **common_hyper_kws,
             )
+            if economy:
+                del res[1].regressors
+                if len(monitor) == 0:
+                    del res[1].history
+            return res
 
     else:
         raise ValueError("Unknown algo.")
@@ -242,6 +253,12 @@ if __name__ == "__main__":
         default=1,
         help="how often to store monitored quantities",
     )
+    parser.add_argument(
+        "--economy",
+        action="store_true",
+        default=False,
+        help="do not store regressor objects",
+    )
 
     main_args = parser.parse_args()
 
@@ -302,6 +319,7 @@ if __name__ == "__main__":
         exp_streak_log=main_args.exp_streak_log,
         monitor=main_args.monitor,
         monitor_step=main_args.monitor_step,
+        economy=main_args.economy,
     )
     if main_args.verbose:
         print(f"Maximum median score: {hyper_res[0]:.2f}.")
