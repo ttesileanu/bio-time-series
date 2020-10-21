@@ -7,7 +7,7 @@ import h5py
 
 from typing import Tuple
 
-from bioslds.regressors import BioWTARegressor
+from bioslds.regressors import BioWTARegressor, CrosscorrelationRegressor
 from bioslds.batch import hyper_score_ar
 from bioslds.hyperopt import random_maximize
 from bioslds.dataset import RandomArmaDataset
@@ -29,10 +29,11 @@ def make_bio_wta_with_stable_initial(*args, **kwargs) -> BioWTARegressor:
         make_random_arma(kwargs["n_features"], 0, rng=kwargs["rng"]).a
         for _ in range(kwargs["n_models"])
     ]
-    return BioWTARegressor(weights=weights, **kwargs)
+    return BioWTARegressor(*args, weights=weights, **kwargs)
 
 
-def run_kmeans_hyper_optimize(
+def run_hyper_optimize(
+    algo: str,
     dataset: RandomArmaDataset,
     n_trials: int,
     n_features: int,
@@ -45,25 +46,52 @@ def run_kmeans_hyper_optimize(
     monitor: list,
     monitor_step: int,
 ) -> Tuple[float, dict, dict]:
+    # handle log-scale options
     log_scale = []
     if rate_log:
         log_scale.append("rate")
     if exp_streak_log:
         log_scale.append("exp_streak")
+
+    # choose some common options used for all algorithms when calling hyper_score_ar
+    common_hyper_args = (dataset, unordered_accuracy_score)
+    common_hyper_kws = dict(
+        n_models=len(dataset.armas[0]),
+        n_features=n_features,
+        rng=clusterer_seed,
+        progress=slow_tqdm,
+        monitor=monitor,
+        monitor_step=monitor_step,
+    )
+
+    # handle algorithm options
+    if algo == "biowta":
+
+        def fct(**kwargs):
+            return hyper_score_ar(
+                make_bio_wta_with_stable_initial,
+                *common_hyper_args,
+                rate=kwargs["rate"],
+                trans_mat=1 - 1 / kwargs["exp_streak"],
+                **common_hyper_kws,
+            )
+
+    elif algo == "xcorr":
+
+        def fct(**kwargs):
+            return hyper_score_ar(
+                CrosscorrelationRegressor,
+                *common_hyper_args,
+                nsm_rate=kwargs["rate"],
+                xcorr_rate=1 / kwargs["exp_streak"],
+                **common_hyper_kws,
+            )
+
+    else:
+        raise ValueError("Unknown algo.")
+
     res = random_maximize(
-        lambda **kwargs: hyper_score_ar(
-            make_bio_wta_with_stable_initial,
-            dataset,
-            unordered_accuracy_score,
-            n_models=len(dataset.armas[0]),
-            n_features=n_features,
-            rate=kwargs["rate"],
-            trans_mat=1 - 1 / kwargs["exp_streak"],
-            rng=clusterer_seed,
-            progress=slow_tqdm,
-            monitor=monitor,
-            monitor_step=monitor_step,
-        ),
+        fct,
         {"rate": rate_range, "exp_streak": exp_streak_range},
         n_trials,
         log_scale=log_scale,
@@ -89,6 +117,7 @@ if __name__ == "__main__":
     parser.add_argument("outfile", help="where to save the results (HDF5)")
     parser.add_argument("ar_order", type=int, help="AR order of generated processes")
     parser.add_argument("ma_order", type=int, help="MA order of generated processes")
+    parser.add_argument("algorithm", help="algorithm to use (biowta or xcorr)")
 
     parser.add_argument(
         "-n",
@@ -231,6 +260,9 @@ if __name__ == "__main__":
         main_args.fix_scale = None
 
     # perform some checks
+    if main_args.algorithm not in ["biowta", "xcorr"]:
+        exit("Unknown algorithm.")
+
     if main_args.verbose:
         if main_args.dataset is None:
             print("WARNING: no --dataset option, dataset seed is set to zero.")
@@ -257,7 +289,8 @@ if __name__ == "__main__":
         hyper_dataset.hdf_skip_contents = False
 
     # run the hyper optimization -- for now BioWTA is the only clusterer choice
-    hyper_res = run_kmeans_hyper_optimize(
+    hyper_res = run_hyper_optimize(
+        main_args.algorithm,
         hyper_dataset,
         n_trials=main_args.n_trials,
         n_features=main_args.n_features,
