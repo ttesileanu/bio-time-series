@@ -4,6 +4,7 @@ import copy
 
 import numpy as np
 import matplotlib as mpl
+import matplotlib.colors as mplc
 import matplotlib.pyplot as plt
 import seaborn as sns
 
@@ -267,3 +268,31 @@ def show_latent(
 
         # adjust limits
         ax.set_ylim(*yl)
+
+
+def make_gradient_cmap(name: str, c1, c2, **kwargs) -> mplc.Colormap:
+    """ Make a colormap that interpolates between two given colors.
+
+    Parameters
+    ----------
+    name
+        Name to give the colormap.
+    c1
+        Starting color. This can be in any format recognized by Matplotlib.
+    c2
+        Final color. This can be in any format recognized by Matplotlib.
+
+    Returns the `Colormap` object.
+    """
+    rgba1 = mplc.to_rgba(c1)
+    rgba2 = mplc.to_rgba(c2)
+
+    segments = {
+        "red": [[0.0, 0.0, rgba1[0]], [1.0, rgba2[0], 0.0]],
+        "green": [[0.0, 0.0, rgba1[1]], [1.0, rgba2[1], 0.0]],
+        "blue": [[0.0, 0.0, rgba1[2]], [1.0, rgba2[2], 0.0]],
+        "alpha": [[0.0, 0.0, rgba1[3]], [1.0, rgba2[3], 0.0]],
+    }
+
+    cmap = mplc.LinearSegmentedColormap(name, segmentdata=segments, **kwargs)
+    return cmap
