@@ -127,11 +127,13 @@ class Arma(object):
         # useful for testing
         self._mode = "ma_conv_ar_numba"
 
+    # noinspection PyUnusedLocal
     def transform(
         self,
         n_samples: Optional[int] = None,
         U: Union[None, Sequence, Callable] = None,
         monitor: Optional[AttributeMonitor] = None,
+        chunk_hint: int = 10000,
     ) -> Tuple[np.ndarray, np.ndarray]:
         """ Process or generate input samples.
 
@@ -162,6 +164,8 @@ class Arma(object):
             An object for monitoring the evolution of the parameters during learning
             (e.g., an instance of `AttributeMonitor`). Parameter values are stored and
             calculated before their updates.
+        chunk_hint
+            A hint about how to split the data into chunks. This is currently unused.
 
         Returns a tuple `(Y, U)` of generated `y` and `u` samples. If the `U`
         parameter was used and was a sequence, the output `U` simply mirrors the

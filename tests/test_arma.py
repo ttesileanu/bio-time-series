@@ -160,6 +160,15 @@ class TestArmaTransform(unittest.TestCase):
         y, _ = self.arma.transform(U=self.u)
         self.assertAlmostEqual(self.arma.output_, y[-1])
 
+    def test_chunk_hint_does_not_affect_output(self):
+        arma2 = self.create_initial_arma()
+
+        y1, u1 = self.arma.transform(U=self.u, chunk_hint=13)
+        y2, u2 = arma2.transform(self.n, U=lambda size: self.u, chunk_hint=25)
+
+        np.testing.assert_allclose(y1, y2)
+        np.testing.assert_allclose(u1, u2)
+
 
 class TestTransformDefaultSource(unittest.TestCase):
     def setUp(self):
@@ -781,6 +790,18 @@ class TestArmaMonitor(unittest.TestCase):
 
         self.assertTrue(hasattr(monitor.history_, "input_"))
         self.assertTrue(hasattr(monitor.history_, "output_"))
+
+    def test_chunk_hint_does_not_affect_monitoring(self):
+        names = ["input_", "output_"]
+        monitor1 = AttributeMonitor(names)
+        self.arma.transform(U=self.source_data, monitor=monitor1, chunk_hint=11)
+
+        monitor2 = AttributeMonitor(names)
+        arma2 = Arma(self.a, self.b)
+        arma2.transform(U=self.source_data, monitor=monitor2, chunk_hint=23)
+
+        np.testing.assert_allclose(monitor1.history_.input_, monitor2.history_.input_)
+        np.testing.assert_allclose(monitor1.history_.output_, monitor2.history_.output_)
 
 
 if __name__ == "__main__":
