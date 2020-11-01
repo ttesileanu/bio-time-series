@@ -3,8 +3,11 @@
 import numpy as np
 import copy
 
+from bioslds.monitor import AttributeMonitor
+
 from numba import njit
 from typing import Sequence, Tuple, Callable, Optional, Union
+from types import SimpleNamespace
 
 
 class Arma(object):
@@ -23,6 +26,10 @@ class Arma(object):
 
     Attributes
     ==========
+    n_features : int
+        Number of input dimensions. This is always equal to 1.
+    n_components : int
+        Number of output dimensions. This is always equal to 1.
     a : array of float
         AR parameters. This shouldn't be changed after `__init__`.
     b : array of float
@@ -40,6 +47,10 @@ class Arma(object):
         needs to be called with an input sequence.
     source_scaling : float
         Amount by which the source data is scaled before using.
+    input_ : float
+        Last value of input (source) signal.
+    output_ : float
+        Last value of output signal.
     history_ : tuple of arrays
         A tuple, `(history_y, history_u)`, of recent samples of the output and
         input sequences. The number of samples kept depends on the order: `p`
@@ -78,6 +89,9 @@ class Arma(object):
         source_scaling
             Amount by which the source data is scaled before using.
         """
+        self.n_features = 1
+        self.n_components = 1
+
         # making sure to make copies
         self.a = np.array(a)
         self.b = np.array(b)
@@ -95,8 +109,19 @@ class Arma(object):
                 np.copy(initial_conditions[0]),
                 np.copy(initial_conditions[1]),
             )
+            if len(self.history_[0]) > 0:
+                self.output_ = self.history_[0][-1]
+            else:
+                self.output_ = 0
+
+            if len(self.history_[1]) > 0:
+                self.input_ = self.history_[1][-1]
+            else:
+                self.input_ = 0
         else:
             self.history_ = (np.zeros(self.p), np.zeros(self.q))
+            self.input_ = 0
+            self.output_ = 0
 
         # _mode allows us to choose legacy implementations
         # useful for testing
@@ -106,6 +131,7 @@ class Arma(object):
         self,
         n_samples: Optional[int] = None,
         U: Union[None, Sequence, Callable] = None,
+        monitor: Optional[AttributeMonitor] = None,
     ) -> Tuple[np.ndarray, np.ndarray]:
         """ Process or generate input samples.
 
@@ -132,6 +158,10 @@ class Arma(object):
             is a sequence, it must be that `len(U) == n_samples`. If `U` is a
             callable, it must take a keyword argument `size` in the form of a
             tuple `(n_samples, n_features)`.
+        monitor
+            An object for monitoring the evolution of the parameters during learning
+            (e.g., an instance of `AttributeMonitor`). Parameter values are stored and
+            calculated before their updates.
 
         Returns a tuple `(Y, U)` of generated `y` and `u` samples. If the `U`
         parameter was used and was a sequence, the output `U` simply mirrors the
@@ -141,6 +171,8 @@ class Arma(object):
             if n_samples is None:
                 raise ValueError("Need either U or n_samples.")
             if n_samples == 0:
+                if monitor is not None:
+                    monitor.setup(0)
                 return np.array([]), np.array([])
             if self.default_source is None:
                 raise ValueError("Need default_source if there's no U.")
@@ -154,6 +186,8 @@ class Arma(object):
 
         # output vectors including pre-history
         n = len(U)
+        if monitor is not None:
+            monitor.setup(n)
         if n == 0:
             return np.array([]), np.array([])
 
@@ -172,7 +206,7 @@ class Arma(object):
         }
         transform_fct = transform_dict[self._mode]
         # noinspection PyArgumentList
-        transform_fct(y_out_full, u_out_full)
+        transform_fct(y_out_full, u_out_full, monitor=monitor)
 
         # update history
         if self.p > 0:
@@ -182,9 +216,17 @@ class Arma(object):
 
         y_out = y_out_full[self.p :]
         u_out = u_out_full[self.q :]
+
+        self.input_ = u_out[-1]
+        self.output_ = y_out[-1]
         return y_out, u_out
 
-    def _transform_naive(self, y_out_full: np.ndarray, u_out_full: np.ndarray):
+    def _transform_naive(
+        self,
+        y_out_full: np.ndarray,
+        u_out_full: np.ndarray,
+        monitor: Optional[AttributeMonitor],
+    ):
         """ Perform the transformation using a naive, slow algorithm. """
         n = len(y_out_full) - self.p
         a_flip = np.flip(self.a)
@@ -195,8 +237,16 @@ class Arma(object):
             ma_part = np.dot(b_flip_big, u_out_full[i : i + self.q + 1])
             y_out_full[i + self.p] = ar_part + ma_part + self.bias
 
+            self.input_ = u_out_full[i + self.q]
+            self.output_ = y_out_full[i + self.p]
+            if monitor is not None:
+                monitor.record(self)
+
     def _transform_ma_conv(
-        self, y_out_full: np.ndarray, u_out_full: np.ndarray
+        self,
+        y_out_full: np.ndarray,
+        u_out_full: np.ndarray,
+        monitor: Optional[AttributeMonitor],
     ):
         """ Perform the transformation using `np.convolve` for the MA part. """
         n = len(y_out_full) - self.p
@@ -209,8 +259,16 @@ class Arma(object):
             ar_part = np.dot(a_flip, y_out_full[i : i + self.p])
             y_out_full[i + self.p] = ar_part + u[i] + self.bias
 
+            self.input_ = u_out_full[i + self.q]
+            self.output_ = y_out_full[i + self.p]
+            if monitor is not None:
+                monitor.record(self)
+
     def _transform_ma_conv_ar_numba(
-        self, y_out_full: np.ndarray, u_out_full: np.ndarray
+        self,
+        y_out_full: np.ndarray,
+        u_out_full: np.ndarray,
+        monitor: Optional[AttributeMonitor],
     ):
         """ Perform the transformation using `np.convolve` for MA part and
         Numba-accelerated code for AR. """
@@ -223,7 +281,19 @@ class Arma(object):
         else:
             y_out_full[self.p :] = u + self.bias
 
-    def _transform_numba(self, y_out_full: np.ndarray, u_out_full: np.ndarray):
+        if monitor is not None:
+            monitor.record_batch(
+                SimpleNamespace(
+                    input_=u_out_full[self.q :], output_=y_out_full[self.p :],
+                )
+            )
+
+    def _transform_numba(
+        self,
+        y_out_full: np.ndarray,
+        u_out_full: np.ndarray,
+        monitor: Optional[AttributeMonitor],
+    ):
         """ Perform the transformation using Numba-accelerated version of naive
         algorithm. """
         if self.q > 0:
@@ -236,6 +306,13 @@ class Arma(object):
             _perform_ar(y_out_full, u, np.copy(self.a[::-1]), self.p, self.bias)
         else:
             y_out_full[self.p :] = u + self.bias
+
+        if monitor is not None:
+            monitor.record_batch(
+                SimpleNamespace(
+                    input_=u_out_full[self.q :], output_=y_out_full[self.p :],
+                )
+            )
 
     def __str__(self) -> str:
         s = f"Arma(a={str(self.a)}, b={str(self.b)}, bias={str(self.bias)})"
@@ -328,9 +405,7 @@ class Arma(object):
 
 
 @njit
-def _perform_ar(
-    y: np.ndarray, u: np.ndarray, a_flip: np.ndarray, p: int, bias: float
-):
+def _perform_ar(y: np.ndarray, u: np.ndarray, a_flip: np.ndarray, p: int, bias: float):
     n = len(y) - p
     for i in range(n):
         crt_past = y[i : i + p]
@@ -402,9 +477,7 @@ def make_random_arma(
 
 
 def _generate_random_poly(
-    n: int,
-    radius: float,
-    rng: Union[np.random.Generator, np.random.RandomState],
+    n: int, radius: float, rng: Union[np.random.Generator, np.random.RandomState],
 ) -> np.ndarray:
     """ Generate a random real polynomial with roots constrained to lie within a
     disk of given radius.
@@ -431,9 +504,7 @@ def _generate_random_poly(
     n_complex = 2 * n_complex_pairs
 
     # generate pairs of random complex roots
-    roots[:n_complex_pairs] = radius * _random_unit_circle(
-        rng, size=n_complex_pairs
-    )
+    roots[:n_complex_pairs] = radius * _random_unit_circle(rng, size=n_complex_pairs)
     roots[n_complex_pairs:n_complex] = np.conjugate(roots[:n_complex_pairs])
 
     # generate one random real root, if necessary

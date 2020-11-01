@@ -6,6 +6,7 @@ from unittest import mock
 from typing import Callable, Optional
 
 from bioslds.arma import Arma, make_random_arma
+from bioslds.monitor import AttributeMonitor
 
 
 class TestArmaInit(unittest.TestCase):
@@ -24,6 +25,18 @@ class TestArmaInit(unittest.TestCase):
 
     def test_default_bias_is_zero(self):
         self.assertEqual(self.arma.bias, 0)
+
+    def test_sets_n_features_to_one(self):
+        self.assertEqual(self.arma.n_features, 1)
+
+    def test_sets_n_components_to_one(self):
+        self.assertEqual(self.arma.n_components, 1)
+
+    def test_input_is_initialized_to_zero(self):
+        self.assertAlmostEqual(self.arma.input_, 0)
+
+    def test_output_is_initialized_to_zero(self):
+        self.assertAlmostEqual(self.arma.output_, 0)
 
 
 class TestArmaInitZeroOrders(unittest.TestCase):
@@ -133,6 +146,20 @@ class TestArmaTransform(unittest.TestCase):
         np.testing.assert_allclose(y1, y2)
         np.testing.assert_allclose(u1, u2)
 
+    def test_input_is_initialized_according_to_initial_conditions_for_u(self):
+        self.assertAlmostEqual(self.arma.input_, self.ic[1][-1])
+
+    def test_output_is_initialized_according_to_initial_conditions_for_y(self):
+        self.assertAlmostEqual(self.arma.output_, self.ic[0][-1])
+
+    def test_input_set_to_last_input_value(self):
+        self.arma.transform(U=self.u)
+        self.assertAlmostEqual(self.arma.input_, self.u[-1])
+
+    def test_output_set_to_last_output_value(self):
+        y, _ = self.arma.transform(U=self.u)
+        self.assertAlmostEqual(self.arma.output_, y[-1])
+
 
 class TestTransformDefaultSource(unittest.TestCase):
     def setUp(self):
@@ -190,6 +217,10 @@ class TestArmaTransformPureAr(unittest.TestCase):
         y_exp = y0 * alpha ** np.arange(1, n + 1)
         np.testing.assert_allclose(y, y_exp)
 
+    def test_input_set_to_zero_when_only_u_history_is_empty(self):
+        ar = Arma([0.78], [], initial_conditions=([1.0], []))
+        self.assertAlmostEqual(ar.input_, 0)
+
 
 class TestArmaTransformPureMa(unittest.TestCase):
     def test_ma_is_convolution(self):
@@ -208,6 +239,10 @@ class TestArmaTransformPureMa(unittest.TestCase):
         y_exp = np.convolve(u_padded, b_ext, mode="valid")
 
         np.testing.assert_allclose(y, y_exp)
+
+    def test_output_set_to_zero_when_only_y_history_is_empty(self):
+        ar = Arma([], [-0.5], initial_conditions=([], [1.0]))
+        self.assertAlmostEqual(ar.output_, 0)
 
 
 class TestArmaStrAndRepr(unittest.TestCase):
@@ -415,6 +450,20 @@ class TestArmaCopy(unittest.TestCase):
         y2, _ = arma2_copy.transform(n - n1)
 
         np.testing.assert_allclose(y_exp, np.hstack((y1, y2)))
+
+    def test_input_is_copied(self):
+        arma1 = self.createArma(default_source=default_rng(0).normal)
+        arma1.transform(13)
+
+        arma2 = arma1.copy()
+        self.assertAlmostEqual(arma2.input_, arma1.input_)
+
+    def test_output_is_copied(self):
+        arma1 = self.createArma(default_source=default_rng(0).normal)
+        arma1.transform(13)
+
+        arma2 = arma1.copy()
+        self.assertAlmostEqual(arma2.output_, arma1.output_)
 
 
 class TestMakeRandomArma(unittest.TestCase):
@@ -692,6 +741,46 @@ class TestArmaSourceScaling(unittest.TestCase):
         y_def, _ = arma_def.transform(U=self.source_data)
 
         np.testing.assert_allclose(y_def, self.y_alt)
+
+
+class TestArmaMonitor(unittest.TestCase):
+    def setUp(self):
+        self.rng = np.random.default_rng(1)
+        self.n = 253
+        self.source_data = self.rng.normal(size=self.n)
+
+        self.a = [-1.1, -0.6, -0.1]
+        self.b = [0.5, 0.3]
+
+        self.arma = Arma(self.a, self.b)
+
+    def test_monitor_output_matches_transform_retval(self):
+        monitor = AttributeMonitor(["output_"])
+        y_out, _ = self.arma.transform(U=self.source_data, monitor=monitor)
+
+        self.assertTrue(hasattr(monitor.history_, "output_"))
+        np.testing.assert_allclose(monitor.history_.output_, y_out)
+
+    def test_monitor_input_matches_actual_input(self):
+        monitor = AttributeMonitor(["input_"])
+        self.arma.transform(U=self.source_data, monitor=monitor)
+
+        self.assertTrue(hasattr(monitor.history_, "input_"))
+        np.testing.assert_allclose(monitor.history_.input_, self.source_data)
+
+    def test_monitor_is_initialized_on_zero_n_samples(self):
+        monitor = AttributeMonitor(["input_", "output_"])
+        self.arma.transform(0, monitor=monitor)
+
+        self.assertTrue(hasattr(monitor.history_, "input_"))
+        self.assertTrue(hasattr(monitor.history_, "output_"))
+
+    def test_monitor_is_initialized_on_empty_U(self):
+        monitor = AttributeMonitor(["input_", "output_"])
+        self.arma.transform(U=[], monitor=monitor)
+
+        self.assertTrue(hasattr(monitor.history_, "input_"))
+        self.assertTrue(hasattr(monitor.history_, "output_"))
 
 
 if __name__ == "__main__":
