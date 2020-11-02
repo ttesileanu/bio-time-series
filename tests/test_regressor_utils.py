@@ -3,58 +3,58 @@ import unittest
 import numpy as np
 
 from unittest import mock
-from bioslds.regressor_utils import fit_infer_ar
+from bioslds.regressor_utils import transform_ar
 
 
-class TestFitInferAR(unittest.TestCase):
-    def test_calls_regressor_fit_infer_once(self):
+class TestTransformAR(unittest.TestCase):
+    def test_calls_regressor_transform_once(self):
         regressor = mock.Mock(n_features=3)
-        fit_infer_ar(regressor, [])
+        transform_ar(regressor, [])
 
-        regressor.fit_infer.assert_called_once()
+        regressor.transform.assert_called_once()
 
-    def test_returns_regressor_fit_infer_output(self):
+    def test_returns_regressor_transform_output(self):
         regressor = mock.Mock(n_features=3)
 
         ret = (1, {"a": 3})
-        regressor.fit_infer.return_value = ret
+        regressor.transform.return_value = ret
 
-        actual_ret = fit_infer_ar(regressor, [])
+        actual_ret = transform_ar(regressor, [])
 
         self.assertEqual(actual_ret, ret)
 
-    def test_does_not_pass_bias_to_regressor_fit_infer(self):
+    def test_does_not_pass_bias_to_regressor_transform(self):
         regressor = mock.Mock(n_features=3)
-        fit_infer_ar(regressor, [], bias=True)
+        transform_ar(regressor, [], bias=True)
 
-        call_args = regressor.fit_infer.call_args
+        call_args = regressor.transform.call_args
         self.assertNotIn("bias", call_args[1])
 
-    def test_passes_additional_kwargs_to_regressor_fit_infer(self):
+    def test_passes_additional_kwargs_to_regressor_transform(self):
         regressor = mock.Mock(n_features=3)
         kwargs = {"foo": 3, "bar": 5}
-        fit_infer_ar(regressor, [], **kwargs)
+        transform_ar(regressor, [], **kwargs)
 
-        call_kwargs = regressor.fit_infer.call_args[1]
+        call_kwargs = regressor.transform.call_args[1]
         for key in kwargs:
             self.assertIn(key, call_kwargs)
             self.assertEqual(kwargs[key], call_kwargs[key])
 
-    def test_calls_regressor_fit_infer_with_two_positional_args(self):
+    def test_calls_regressor_transform_with_two_positional_args(self):
         regressor = mock.Mock(n_features=3)
-        fit_infer_ar(regressor, [])
+        transform_ar(regressor, [])
 
-        self.assertEqual(len(regressor.fit_infer.call_args[0]), 2)
+        self.assertEqual(len(regressor.transform.call_args[0]), 2)
 
-    def test_args_sent_to_regressor_fit_infer_have_the_correct_length(self):
+    def test_args_sent_to_regressor_transform_have_the_correct_length(self):
         p = 4
         regressor = mock.Mock(n_features=p)
 
         n = 52
         a = n * [0]
-        fit_infer_ar(regressor, a)
+        transform_ar(regressor, a)
 
-        call_args = regressor.fit_infer.call_args[0]
+        call_args = regressor.transform.call_args[0]
         self.assertEqual(len(call_args[0]), n - p)
         self.assertEqual(len(call_args[1]), n - p)
 
@@ -64,9 +64,9 @@ class TestFitInferAR(unittest.TestCase):
 
         n = 23
         a = n * [0]
-        fit_infer_ar(regressor, a, bias=False)
+        transform_ar(regressor, a, bias=False)
 
-        call_args = regressor.fit_infer.call_args[0]
+        call_args = regressor.transform.call_args[0]
         self.assertEqual(np.shape(call_args[0])[1], p)
 
     def test_size_of_predictor_variable_correct_when_bias_is_true(self):
@@ -75,9 +75,9 @@ class TestFitInferAR(unittest.TestCase):
 
         n = 20
         a = n * [0]
-        fit_infer_ar(regressor, a, bias=True)
+        transform_ar(regressor, a, bias=True)
 
-        call_args = regressor.fit_infer.call_args[0]
+        call_args = regressor.transform.call_args[0]
         self.assertEqual(np.shape(call_args[0])[1], p + 1)
 
     def test_bias_false_by_default(self):
@@ -87,11 +87,11 @@ class TestFitInferAR(unittest.TestCase):
 
         n = 10
         a = n * [0]
-        fit_infer_ar(regressor1, a, bias=False)
-        fit_infer_ar(regressor2, a)
+        transform_ar(regressor1, a, bias=False)
+        transform_ar(regressor2, a)
 
-        call_args1 = regressor1.fit_infer.call_args[0]
-        call_args2 = regressor2.fit_infer.call_args[0]
+        call_args1 = regressor1.transform.call_args[0]
+        call_args2 = regressor2.transform.call_args[0]
 
         self.assertEqual(np.shape(call_args1[0]), np.shape(call_args2[0]))
 
@@ -103,9 +103,9 @@ class TestFitInferAR(unittest.TestCase):
 
         p = 4
         regressor = mock.Mock(n_features=p)
-        fit_infer_ar(regressor, y, bias=False)
+        transform_ar(regressor, y, bias=False)
 
-        call_args = regressor.fit_infer.call_args[0]
+        call_args = regressor.transform.call_args[0]
         np.testing.assert_allclose(call_args[1], y[p:])
 
     def test_y_values_passed_to_regressor_infer_fit_correct_when_bias_is_true(self):
@@ -116,9 +116,9 @@ class TestFitInferAR(unittest.TestCase):
 
         p = 4
         regressor = mock.Mock(n_features=p + 1)
-        fit_infer_ar(regressor, y, bias=True)
+        transform_ar(regressor, y, bias=True)
 
-        call_args = regressor.fit_infer.call_args[0]
+        call_args = regressor.transform.call_args[0]
         np.testing.assert_allclose(call_args[1], y[p:])
 
     def test_X_values_passed_to_regressor_infer_fit_correct_when_bias_is_false(self):
@@ -129,9 +129,9 @@ class TestFitInferAR(unittest.TestCase):
 
         p = 4
         regressor = mock.Mock(n_features=p)
-        fit_infer_ar(regressor, y, bias=False)
+        transform_ar(regressor, y, bias=False)
 
-        call_args = regressor.fit_infer.call_args[0]
+        call_args = regressor.transform.call_args[0]
 
         expected_X = np.zeros((len(y) - p, p))
         for i in range(len(y) - p):
@@ -150,11 +150,11 @@ class TestFitInferAR(unittest.TestCase):
         regressor1 = mock.Mock(n_features=p)
         regressor2 = mock.Mock(n_features=p + 1)
 
-        fit_infer_ar(regressor1, y, bias=False)
-        fit_infer_ar(regressor2, y, bias=True)
+        transform_ar(regressor1, y, bias=False)
+        transform_ar(regressor2, y, bias=True)
 
-        call_args1 = regressor1.fit_infer.call_args[0]
-        call_args2 = regressor2.fit_infer.call_args[0]
+        call_args1 = regressor1.transform.call_args[0]
+        call_args2 = regressor2.transform.call_args[0]
 
         X = call_args1[0]
         X_bias = call_args2[0]

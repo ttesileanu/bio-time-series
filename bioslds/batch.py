@@ -8,7 +8,7 @@ import numpy as np
 from types import SimpleNamespace
 from typing import Sequence, Optional, Callable, Union, Tuple
 
-from bioslds.regressor_utils import fit_infer_ar
+from bioslds.regressor_utils import transform_ar
 from bioslds.monitor import AttributeMonitor
 
 
@@ -36,7 +36,7 @@ def hyper_score_ar(
     ----------
     regressor_class
         Class to use to create regressors. One regressor is created for each signal in
-        the dataset, and `fit_infer_ar` is used to fit the regressor on each signal.
+        the dataset, and `transform_ar` is used to fit the regressor on each signal.
         Additional keyword arguments passed to `hyper_score_ar` are transferred to the
         `regressor_class` constructor -- you'll probably need at least `n_models` and
         `n_features`. A random number generator is chosen automatically by
@@ -56,12 +56,12 @@ def hyper_score_ar(
         Random number generator or seed to use for generating initial weight values. If
         seed, a random number generator is created using `np.random.default_rng`.
     fit_kws
-        Additional argument to pass to `fit_infer_ar`.
+        Additional argument to pass to `transform_ar`.
     monitor
         Sequence of strings denoting values to monitor during the inference procedure
         for each regressor and signal pair. The special value "r" can be used to also
         store continuous latent-state assignments that are returned as the first output
-        of `fit_infer` / `fit_infer_ar`.
+        of `transform` / `transform_ar`.
     monitor_step
         How often to record the values from `monitor`.
     progress
@@ -70,7 +70,7 @@ def hyper_score_ar(
         `progress(iterator) -> iterator`.
     progress_trial
         Callable for monitoring the progress during each trial. This is directly passed
-        to `fit_infer_ar` (and thus to `regressor_class().fit_infer`).
+        to `transform_ar` (and thus to `regressor_class().transform`).
     test_fraction
         Fraction of samples to use when estimating the clustering score.
     test_samples
@@ -102,7 +102,7 @@ def hyper_score_ar(
     if monitor is None:
         monitor = []
 
-    # handle monitoring of fit_infer output
+    # handle monitoring of transform output
     if "r" in monitor:
         monitor = [_ for _ in monitor if _ != "r"]
         store_r = True
@@ -138,14 +138,13 @@ def hyper_score_ar(
             crt_args["rng"] = crt_rng
         regressor = regressor_class(**crt_args)
 
-        # run fit_infer_ar with this regressor
+        # run transform_ar with this regressor
         crt_monitor = monitor
         if len(crt_monitor) > 0 and monitor_step > 1:
             crt_monitor = AttributeMonitor(monitor, step=monitor_step)
 
-        crt_r, crt_history = fit_infer_ar(
-            regressor, signal.y, monitor=crt_monitor, **fit_kws
-        )
+        crt_r, crt_history = transform_ar(regressor, signal.y, monitor=crt_monitor,
+                                          **fit_kws)
         if store_r:
             crt_history.r = crt_r[::monitor_step]
         history.append(crt_history)

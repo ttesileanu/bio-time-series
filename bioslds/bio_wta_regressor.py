@@ -48,7 +48,7 @@ class BioWTARegressor(object):
         (model) `j` at every time step. Currently this is fixed and cannot be learned.
     output_ : array of float, shape (n_models, )
         Last latent state assignment. This corresponds to the last value returned from
-        `fit_infer`.
+        `transform`.
     """
 
     def __init__(
@@ -136,7 +136,7 @@ class BioWTARegressor(object):
 
         self._mode = "numba"
 
-    def fit_infer(
+    def transform(
         self,
         X: Sequence,
         y: Sequence,
@@ -195,8 +195,8 @@ class BioWTARegressor(object):
         r = np.zeros((n_samples, self.n_models))
 
         fct_mapping = {
-            "naive": self._fit_infer_naive,
-            "numba": self._fit_infer_numba,
+            "naive": self._transform_naive,
+            "numba": self._transform_numba,
         }
         fct = fct_mapping[self._mode]
 
@@ -229,7 +229,7 @@ class BioWTARegressor(object):
             return r, monitor.history_
 
     # noinspection PyUnusedLocal
-    def _fit_infer_naive(
+    def _transform_naive(
         self,
         X: np.ndarray,
         y: np.ndarray,
@@ -279,7 +279,7 @@ class BioWTARegressor(object):
 
             last_k = k
 
-    def _fit_infer_numba(
+    def _transform_numba(
         self,
         X: np.ndarray,
         y: np.ndarray,
@@ -315,18 +315,11 @@ class BioWTARegressor(object):
             crt_weights = np.zeros((crt_n, self.n_models, self.n_features))
             crt_predictions = np.zeros(crt_n)
 
-            self.weights_ = _perform_fit_infer(
-                crt_X,
-                crt_y,
-                crt_r,
-                np.copy(self.weights_),
-                self._rate_vector,
-                crt_last_r,
-                log_start_prob,
-                log_trans_mat,
-                crt_weights,
-                crt_predictions,
-            )
+            self.weights_ = _perform_transform(crt_X, crt_y, crt_r,
+                                               np.copy(self.weights_),
+                                               self._rate_vector, crt_last_r,
+                                               log_start_prob, log_trans_mat,
+                                               crt_weights, crt_predictions)
 
             if pbar is not None:
                 pbar.update(crt_n)
@@ -364,7 +357,7 @@ class BioWTARegressor(object):
 
 
 @njit
-def _perform_fit_infer(
+def _perform_transform(
     X: np.ndarray,
     y: np.ndarray,
     r: np.ndarray,

@@ -80,7 +80,7 @@ class CrosscorrelationRegressor(object):
 
         self.xcorr = OnlineCrosscorrelation(self.n_features, rate=xcorr_rate)
 
-    def fit_infer(
+    def transform(
         self,
         X: Sequence,
         y: Sequence,
@@ -131,7 +131,7 @@ class CrosscorrelationRegressor(object):
         """
         if monitor is None and progress is None:
             xcorr = self.xcorr.transform(X, y, chunk_hint=chunk_hint)
-            out = self.nsm.fit_infer(xcorr, chunk_hint=chunk_hint)
+            out = self.nsm.transform(xcorr, chunk_hint=chunk_hint)
             return out
         else:
             # handle progress function
@@ -167,9 +167,8 @@ class CrosscorrelationRegressor(object):
                 xcorr = self.xcorr.transform(
                     crt_x, crt_y, monitor=xcorr_monitor, chunk_hint=chunk_hint
                 )
-                crt_out[:] = self.nsm.fit_infer(
-                    xcorr, monitor=nsm_monitor, chunk_hint=chunk_hint
-                )
+                crt_out[:] = self.nsm.transform(xcorr, monitor=nsm_monitor,
+                                                chunk_hint=chunk_hint)
 
                 if monitor is not None:
                     # combine
