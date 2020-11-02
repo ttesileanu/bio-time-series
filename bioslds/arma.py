@@ -133,8 +133,9 @@ class Arma(object):
         n_samples: Optional[int] = None,
         U: Union[None, Sequence, Callable] = None,
         monitor: Optional[AttributeMonitor] = None,
+        return_input: bool = False,
         chunk_hint: int = 10000,
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
         """ Process or generate input samples.
 
         The function uses exactly `n_samples` input samples.
@@ -160,6 +161,9 @@ class Arma(object):
             is a sequence, it must be that `len(U) == n_samples`. If `U` is a
             callable, it must take a keyword argument `size` in the form of a
             tuple `(n_samples, n_features)`.
+        return_input
+            If true, returns both output and input. If false (the default), returns only
+            the output.
         monitor
             An object for monitoring the evolution of the parameters during learning
             (e.g., an instance of `AttributeMonitor`). Parameter values are stored and
@@ -167,7 +171,8 @@ class Arma(object):
         chunk_hint
             A hint about how to split the data into chunks. This is currently unused.
 
-        Returns a tuple `(Y, U)` of generated `y` and `u` samples. If the `U`
+        By default, returns an array of generated `y` samples. If `return_input` is
+        true, returns a tuple `(Y, U)` of generated `y` and `u` samples. If the `U`
         parameter was used and was a sequence, the output `U` simply mirrors the
         input.
         """
@@ -177,7 +182,11 @@ class Arma(object):
             if n_samples == 0:
                 if monitor is not None:
                     monitor.setup(0)
-                return np.array([]), np.array([])
+
+                if return_input:
+                    return np.array([]), np.array([])
+                else:
+                    return np.array([])
             if self.default_source is None:
                 raise ValueError("Need default_source if there's no U.")
 
@@ -193,7 +202,10 @@ class Arma(object):
         if monitor is not None:
             monitor.setup(n)
         if n == 0:
-            return np.array([]), np.array([])
+            if return_input:
+                return np.array([]), np.array([])
+            else:
+                return np.array([])
 
         u_out_full = np.zeros(n + self.q)
         u_out_full[: self.q] = self.history_[1]
@@ -223,7 +235,11 @@ class Arma(object):
 
         self.input_ = u_out[-1]
         self.output_ = y_out[-1]
-        return y_out, u_out
+
+        if return_input:
+            return y_out, u_out
+        else:
+            return y_out
 
     def _transform_naive(
         self,

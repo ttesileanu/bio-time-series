@@ -14,7 +14,8 @@ def sample_switching_models(
     usage_seq: Sequence,
     U: Union[None, Sequence, Callable] = None,
     initial_conditions: Optional[Tuple[Sequence, Sequence]] = None,
-) -> Tuple[np.ndarray, np.ndarray]:
+    return_input: bool = False,
+) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
     """ Sample from a non-stationary stochastic processes that switches between
     different ARMA models at given times.
 
@@ -35,8 +36,12 @@ def sample_switching_models(
         A tuple, `(initial_y, initial_u)`, of recent samples of the output and
         input sequences used to seed the simulation. If these are not provided,
         they are assumed equal to zero.
+    return_input
+        If true, returns both output and input. If false (the default), returns only
+        the output.
 
-    Returns a tuple `(Y, U)` of generated output samples and input samples. If
+    Returns a sequence `Y` of generated samples. If `return_input` is true,
+    returns a  tuple `(Y, U)` of generated output samples and input samples. If
     the `U` parameter was used and was a sequence, the output `U` simply mirrors
     the input.
     """
@@ -76,9 +81,7 @@ def sample_switching_models(
         else:
             n_left = model.p - ptr
             if len(initial_conditions[0]) >= n_left:
-                history_y = np.hstack(
-                    (initial_conditions[0][-n_left:], Y_ret[:ptr])
-                )
+                history_y = np.hstack((initial_conditions[0][-n_left:], Y_ret[:ptr]))
             else:
                 history_y = np.hstack(
                     (
@@ -92,9 +95,7 @@ def sample_switching_models(
         else:
             n_left = model.q - ptr
             if len(initial_conditions[1]) >= n_left:
-                history_u = np.hstack(
-                    (initial_conditions[1][-n_left:], U_ret[:ptr])
-                )
+                history_u = np.hstack((initial_conditions[1][-n_left:], U_ret[:ptr]))
             else:
                 history_u = np.hstack(
                     (
@@ -107,7 +108,7 @@ def sample_switching_models(
         model.history_ = (history_y, history_u)
 
         # generate and store the samples from this model
-        crt_y, crt_u = model.transform(n_samples, U=U)
+        crt_y, crt_u = model.transform(n_samples, U=U, return_input=True)
 
         Y_ret[ptr : ptr + n_samples] = crt_y
 
@@ -116,7 +117,10 @@ def sample_switching_models(
 
         ptr += n_samples
 
-    return Y_ret, U_ret
+    if return_input:
+        return Y_ret, U_ret
+    else:
+        return Y_ret
 
 
 class ArmaHSMM(object):
@@ -153,7 +157,13 @@ class ArmaHSMM(object):
         n_samples: Optional[int] = None,
         U: Union[None, Sequence, Callable] = None,
         initial_conditions: Optional[Tuple[Sequence, Sequence]] = None,
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        return_input: bool = False,
+        return_usage_seq: bool = False,
+    ) -> Union[
+        np.ndarray,
+        Tuple[np.ndarray, np.ndarray],
+        Tuple[np.ndarray, np.ndarray, np.ndarray],
+    ]:
         """ Process input samples.
 
         The function uses exactly `n_samples` input samples.
@@ -173,11 +183,20 @@ class ArmaHSMM(object):
             A tuple, `(initial_y, initial_u)`, of recent samples of the output
             and input sequences used to seed the simulation. If these are not
             provided, they are assumed equal to zero.
+        return_input
+            If true, returns both output and input. If false (the default), returns only
+            the output.
+        return_usage_seq
+            If true, returns the `usage_seq` in addition to output (and potentially
+            input).
 
-        Returns a tuple `(Y, U, usage_seq)` of generated `y` and `u` samples,
-        and the integer `usage_seq` indicating which models was used at each
-        time step. If the `U` parameter was used and was a sequence, the output
-        `U` simply mirrors the input `U`.
+        Returns either a single array (`Y`) if `return_input` and `return_usage_seq` are
+        both false; or a tuple `(Y, U)` or `(Y, usage_sea)` if only `return_input` or
+        only `return_usage_seq` is true, respectively; or a tuple `(Y, U, usage_seq)` if
+        both are true. Here `Y` is an array of generated `y`; `U` contains the input `u`
+        samples; and `usage_seq` is an integer array indicating which model was used at
+        each time step. If the `U` parameter was used and was a sequence, the output `U`
+        simply mirrors the input `U`.
         """
         # check inputs
         if n_samples is None:
@@ -188,9 +207,23 @@ class ArmaHSMM(object):
         # generate usage sequence, then use sample_switching_models
         usage_seq = self.smm.sample(n_samples)
         y, u = sample_switching_models(
-            self.models, usage_seq, U=U, initial_conditions=initial_conditions
+            self.models,
+            usage_seq,
+            U=U,
+            initial_conditions=initial_conditions,
+            return_input=True,
         )
-        return y, u, usage_seq
+
+        res = (y,)
+        if return_input:
+            res = res + (u,)
+        if return_usage_seq:
+            res = res + (usage_seq,)
+
+        if len(res) == 1:
+            return res[0]
+        else:
+            return res
 
     def __repr__(self) -> str:
         r = f"ArmaHSMM(models={repr(self.models)}, smm={repr(self.smm)})"

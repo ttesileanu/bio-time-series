@@ -160,7 +160,7 @@ def fix_source_scale(
 
     def objective(scale: float):
         source_copy.scale = np.abs(scale)
-        samples, _ = transformer.transform(n_samples, U=source_copy)
+        samples = transformer.transform(n_samples, U=source_copy)
         return np.var(samples) / output_var - 1
 
     soln = optimize.root_scalar(

@@ -240,7 +240,11 @@ class RandomArmaDataset(Sequence[SwitchingSignal]):
             source = sources.GaussianNoise(rng=source_rng)
 
         y, u, usage_seq = arma_hsmm.transform(
-            self.n_samples, U=source, initial_conditions=self.initial_conditions
+            self.n_samples,
+            U=source,
+            initial_conditions=self.initial_conditions,
+            return_input=True,
+            return_usage_seq=True,
         )
 
         return SwitchingSignal(y, u, usage_seq)
