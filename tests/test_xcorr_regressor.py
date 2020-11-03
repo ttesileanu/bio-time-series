@@ -132,8 +132,10 @@ class TestCrosscorrelationRegressorTransform(unittest.TestCase):
             mock_transform.return_value = self.x
             self.xcorr.transform(self.x, self.y)
 
-        np.testing.assert_allclose(mock_transform.call_args[0][0], self.x)
-        np.testing.assert_allclose(mock_transform.call_args[0][1], self.y)
+        self.assertIn("X", mock_transform.call_args[1])
+        self.assertIn("y", mock_transform.call_args[1])
+        np.testing.assert_allclose(mock_transform.call_args[1]["X"], self.x)
+        np.testing.assert_allclose(mock_transform.call_args[1]["y"], self.y)
 
     def test_calls_nsm_transform(self):
         with mock.patch.object(
@@ -159,7 +161,8 @@ class TestCrosscorrelationRegressorTransform(unittest.TestCase):
             )
             self.xcorr.transform(self.x, self.y)
 
-        np.testing.assert_allclose(mock_nsm_transform.call_args[0][0], trafo_ret)
+        self.assertIn("X", mock_nsm_transform.call_args[1])
+        np.testing.assert_allclose(mock_nsm_transform.call_args[1]["X"], trafo_ret)
 
     def test_returns_out_from_nsm_transform(self):
         with mock.patch.object(
@@ -176,8 +179,8 @@ class TestCrosscorrelationRegressorTransform(unittest.TestCase):
         with mock.patch.object(
             bioslds.xcorr_regressor.NonRecurrent, "transform"
         ) as mock_transform:
-            mock_transform.return_value = self.rng.normal(
-                size=(self.n_samples, self.n_models)
+            mock_transform.side_effect = lambda X, **kwargs: self.rng.normal(
+                size=(len(X), self.n_models)
             )
             self.xcorr.transform(self.x, self.y, chunk_hint=chunk)
 
@@ -189,8 +192,10 @@ class TestCrosscorrelationRegressorTransform(unittest.TestCase):
         with mock.patch.object(
             bioslds.xcorr_regressor.OnlineCrosscorrelation, "transform"
         ) as mock_transform:
-            trafo_ret = self.rng.normal(size=(self.n_samples, self.n_features))
-            mock_transform.return_value = trafo_ret
+            trafo_ret = lambda X, y, **kwargs: self.rng.normal(
+                size=(len(X), self.n_features)
+            )
+            mock_transform.side_effect = trafo_ret
             self.xcorr.transform(self.x, self.y, chunk_hint=chunk)
 
         self.assertIn("chunk_hint", mock_transform.call_args[1])
