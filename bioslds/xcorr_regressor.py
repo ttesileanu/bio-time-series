@@ -37,6 +37,10 @@ class CrosscorrelationRegressor(object):
         Number of predictor variables (features).
     n_components : int
         Number of output dimensions. This is an alias for `n_models`.
+    nsm : NonRecurrent
+        Non-negative similarity matching component.
+    xcorr : OnlineCrosscorrelation
+        Component for estimating local cross-correlation.
     """
 
     def __init__(
