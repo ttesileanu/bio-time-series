@@ -120,8 +120,8 @@ class TestBioWTARegressorTransformDefaultInit(unittest.TestCase):
         n1 = 2 * self.n_samples // 7
         n2 = 3 * self.n_samples // 7
         self.wta.transform(self.predictors[:n1], self.dependent[:n1])
-        self.wta.transform(self.predictors[n1: n1 + n2], self.dependent[n1: n1 + n2])
-        self.wta.transform(self.predictors[n1 + n2:], self.dependent[n1 + n2:])
+        self.wta.transform(self.predictors[n1 : n1 + n2], self.dependent[n1 : n1 + n2])
+        self.wta.transform(self.predictors[n1 + n2 :], self.dependent[n1 + n2 :])
 
         wta_again = BioWTARegressor(self.n_models, self.n_features)
         wta_again.transform(self.predictors, self.dependent)
@@ -160,8 +160,12 @@ class TestBioWTARegressorTransformDefaultInit(unittest.TestCase):
         np.testing.assert_allclose(dw, dw_exp)
 
     def test_monitor_as_sequence(self):
-        _, history = self.wta.transform(self.predictors, self.dependent,
-                                        monitor=["weights_", "prediction_"])
+        _, history = self.wta.transform(
+            self.predictors,
+            self.dependent,
+            monitor=["weights_", "prediction_"],
+            return_history=True,
+        )
 
         wta_again = BioWTARegressor(self.n_models, self.n_features)
         weights = []
@@ -182,37 +186,60 @@ class TestBioWTARegressorTransformDefaultInit(unittest.TestCase):
     def test_monitor_as_object(self):
         names = ["weights_"]
         monitor = AttributeMonitor(names)
-        _, history = self.wta.transform(self.predictors, self.dependent,
-                                        monitor=monitor)
+        self.wta.transform(self.predictors, self.dependent, monitor=monitor)
 
         wta_alt = BioWTARegressor(self.n_models, self.n_features)
-        _, history_alt = wta_alt.transform(self.predictors, self.dependent,
-                                           monitor=names)
+        _, history_alt = wta_alt.transform(
+            self.predictors, self.dependent, monitor=names
+        )
 
-        np.testing.assert_allclose(history.weights_, history_alt.weights_)
+        np.testing.assert_allclose(monitor.history_.weights_, history_alt.weights_)
 
     def test_when_monitor_is_object_history_returned_is_its_attrib(self):
         names = ["weights_"]
         monitor = AttributeMonitor(names)
-        _, history = self.wta.transform(self.predictors, self.dependent,
-                                        monitor=monitor)
+        _, history = self.wta.transform(
+            self.predictors, self.dependent, monitor=monitor, return_history=True
+        )
 
-        self.assertEqual(id(history), id(monitor.history_))
+        self.assertIs(history, monitor.history_)
+
+    def test_by_default_history_is_not_returned(self):
+        monitor = AttributeMonitor(["weights_"])
+        res = self.wta.transform(self.predictors, self.dependent, monitor=monitor)
+
+        self.assertEqual(np.shape(res), (self.n_samples, self.n_models))
+
+    def test_history_is_returned_when_monitor_is_sequence(self):
+        res = self.wta.transform(self.predictors, self.dependent, monitor=["weights_"])
+
+        self.assertEqual(len(res), 2)
 
     def test_history_same_when_chunk_hint_changes(self):
         names = ["prediction_"]
-        _, history = self.wta.transform(self.predictors, self.dependent, monitor=names,
-                                        chunk_hint=1000)
+        _, history = self.wta.transform(
+            self.predictors,
+            self.dependent,
+            monitor=names,
+            chunk_hint=1000,
+            return_history=True,
+        )
 
         wta_alt = BioWTARegressor(self.n_models, self.n_features)
-        _, history_alt = wta_alt.transform(self.predictors, self.dependent,
-                                           monitor=names, chunk_hint=1)
+        _, history_alt = wta_alt.transform(
+            self.predictors,
+            self.dependent,
+            monitor=names,
+            chunk_hint=1,
+            return_history=True,
+        )
 
         np.testing.assert_allclose(history.prediction_, history_alt.prediction_)
 
     def test_monitor_output_matches_transform_retval(self):
-        r, history = self.wta.transform(self.predictors, self.dependent,
-                                        monitor=["output_"])
+        r, history = self.wta.transform(
+            self.predictors, self.dependent, monitor=["output_"], return_history=True
+        )
         self.assertTrue(hasattr(history, "output_"))
         np.testing.assert_allclose(history.output_, r)
 
@@ -223,6 +250,10 @@ class TestBioWTARegressorTransformDefaultInit(unittest.TestCase):
     def test_initial_output_is_all_zeros(self):
         self.assertEqual(len(self.wta.output_), self.n_models)
         np.testing.assert_allclose(self.wta.output_, 0)
+
+    def test_return_history_ignored_when_monitor_is_none(self):
+        res = self.wta.transform(self.predictors, self.dependent, return_history=True)
+        self.assertEqual(np.shape(res), (self.n_samples, self.n_models))
 
     def test_progress_called(self):
         mock_progress = mock.MagicMock()
@@ -541,8 +572,9 @@ class TestBioWTARegressorVectorLearningRate(unittest.TestCase):
         self.wta_partial = BioWTARegressor(
             self.n_models, self.n_features, rate=self.rate
         )
-        self.r_partial = self.wta_partial.transform(self.predictors[: self.n_partial],
-                                                    self.dependent[: self.n_partial])
+        self.r_partial = self.wta_partial.transform(
+            self.predictors[: self.n_partial], self.dependent[: self.n_partial]
+        )
 
     def test_weights_different_in_partial_and_full_run(self):
         self.assertGreater(

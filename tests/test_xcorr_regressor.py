@@ -208,15 +208,23 @@ class TestCrosscorrelationRegressorTransformMonitor(unittest.TestCase):
             self.n_models, self.n_features, rng=self.seed
         )
 
-    def test_with_monitor_option_history_is_also_returned(self):
+    def test_with_monitor_object_history_not_returned_by_default(self):
         monitor = AttributeMonitor(["xcorr.coef_"])
-        _, history = self.xcorr.transform(self.x, self.y, monitor=monitor)
+        res = self.xcorr.transform(self.x, self.y, monitor=monitor)
+
+        self.assertEqual(np.shape(res), (self.n_samples, self.n_models))
+
+    def test_history_returned_when_return_history_is_true(self):
+        monitor = AttributeMonitor(["xcorr.coef_"])
+        _, history = self.xcorr.transform(
+            self.x, self.y, monitor=monitor, return_history=True
+        )
 
         self.assertIs(history, monitor.history_)
 
     def test_result_is_the_same_with_and_without_monitor(self):
         monitor = AttributeMonitor(["xcorr.var_"])
-        res, _ = self.xcorr.transform(self.x, self.y, monitor=monitor)
+        res = self.xcorr.transform(self.x, self.y, monitor=monitor)
 
         xcorr_alt = CrosscorrelationRegressor(
             self.n_models, self.n_features, rng=self.seed
@@ -227,16 +235,26 @@ class TestCrosscorrelationRegressorTransformMonitor(unittest.TestCase):
 
     def test_monitor_as_sequence(self):
         names = ["xcorr.var_", "nsm.weights_"]
-        _, history = self.xcorr.transform(self.x, self.y, monitor=names)
+        _, history = self.xcorr.transform(
+            self.x, self.y, monitor=names, return_history=True
+        )
 
         monitor = AttributeMonitor(names)
         xcorr_alt = CrosscorrelationRegressor(
             self.n_models, self.n_features, rng=self.seed
         )
-        _, history_alt = xcorr_alt.transform(self.x, self.y, monitor=monitor)
+        _, history_alt = xcorr_alt.transform(
+            self.x, self.y, monitor=monitor, return_history=True
+        )
 
         np.testing.assert_allclose(history.xcorr.var_, history_alt.xcorr.var_)
         np.testing.assert_allclose(history.nsm.weights_, history_alt.nsm.weights_)
+
+    def test_when_monitor_sequence_return_history_is_forced_true(self):
+        names = ["xcorr.var_", "nsm.weights_"]
+        res = self.xcorr.transform(self.x, self.y, monitor=names)
+
+        self.assertEqual(len(res), 2)
 
     def test_out_matches_monitor_nsm_output(self):
         res, history = self.xcorr.transform(self.x, self.y, monitor=["nsm.output_"])
@@ -249,8 +267,9 @@ class TestCrosscorrelationRegressorTransformMonitor(unittest.TestCase):
         xcorr_alt = CrosscorrelationRegressor(
             self.n_models, self.n_features, rng=self.seed
         )
-        res_alt, history_alt = xcorr_alt.transform(self.x, self.y, monitor=names,
-                                                   chunk_hint=13)
+        res_alt, history_alt = xcorr_alt.transform(
+            self.x, self.y, monitor=names, chunk_hint=13
+        )
 
         np.testing.assert_allclose(res, res_alt)
         np.testing.assert_allclose(history.xcorr.var_, history_alt.xcorr.var_)
@@ -263,8 +282,9 @@ class TestCrosscorrelationRegressorTransformMonitor(unittest.TestCase):
             mock_transform.side_effect = lambda X, **kwargs: (
                 self.rng.normal(size=(len(X), self.n_models))
             )
-            self.xcorr.transform(self.x, self.y, monitor=["xcorr.var_"],
-                                 chunk_hint=chunk)
+            self.xcorr.transform(
+                self.x, self.y, monitor=["xcorr.var_"], chunk_hint=chunk
+            )
 
         self.assertIn("chunk_hint", mock_transform.call_args[1])
         self.assertEqual(mock_transform.call_args[1]["chunk_hint"], chunk)
@@ -277,17 +297,29 @@ class TestCrosscorrelationRegressorTransformMonitor(unittest.TestCase):
             mock_transform.side_effect = lambda X, y, **kwargs: (
                 self.rng.normal(size=(len(X), self.n_features))
             )
-            self.xcorr.transform(self.x, self.y, monitor=["nsm.weights_"],
-                                 chunk_hint=chunk)
+            self.xcorr.transform(
+                self.x, self.y, monitor=["nsm.weights_"], chunk_hint=chunk
+            )
 
         self.assertIn("chunk_hint", mock_transform.call_args[1])
         self.assertEqual(mock_transform.call_args[1]["chunk_hint"], chunk)
 
+    def test_return_history_ignored_when_monitor_is_none(self):
+        res = self.xcorr.transform(self.x, self.y, return_history=True)
+        self.assertEqual(np.shape(res), (self.n_samples, self.n_models))
+
+    def test_return_history_ignored_when_monitor_is_none_but_progress_is_not(self):
+        res = self.xcorr.transform(
+            self.x, self.y, progress=mock.MagicMock(), return_history=True
+        )
+        self.assertEqual(np.shape(res), (self.n_samples, self.n_models))
+
     def test_progress_called_with_monitor(self):
         mock_progress = mock.MagicMock()
 
-        self.xcorr.transform(self.x, self.y, progress=mock_progress,
-                             monitor=["xcorr.var_"])
+        self.xcorr.transform(
+            self.x, self.y, progress=mock_progress, monitor=["xcorr.var_"]
+        )
         mock_progress.assert_called()
 
     def test_progress_called_without_monitor(self):
