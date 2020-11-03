@@ -59,16 +59,16 @@ class TestArmaTransformZeroSamples(unittest.TestCase):
         self.assertEqual(len(y), 0)
 
     def test_zero_samples_returns_empty_output_and_input_when_return_input_true(self):
-        y, u = self.arma.transform(0, return_input=True)
+        y, x = self.arma.transform(0, return_input=True)
 
         self.assertEqual(len(y), 0)
-        self.assertEqual(len(u), 0)
+        self.assertEqual(len(x), 0)
 
-    def test_empty_u_returns_empty(self):
-        y, u = self.arma.transform(U=[], return_input=True)
+    def test_empty_x_returns_empty(self):
+        y, x = self.arma.transform(X=[], return_input=True)
 
         self.assertEqual(len(y), 0)
-        self.assertEqual(len(u), 0)
+        self.assertEqual(len(x), 0)
 
 
 class TestArmaTransform(unittest.TestCase):
@@ -78,24 +78,24 @@ class TestArmaTransform(unittest.TestCase):
         # initial conditions (y, u)
         self.ic = (np.array([0.2, -0.3, 0.1]), np.array([-0.1, 0.5]))
         self.arma = self.create_initial_arma()
-        self.u = rng.normal(size=self.n)
+        self.x = rng.normal(size=self.n)
 
     def create_initial_arma(self) -> Arma:
         return Arma([-1.1, -0.6, -0.1], [0.8, 0.2], initial_conditions=self.ic)
 
     def test_result_length_matches_input_length(self):
-        y = self.arma.transform(U=self.u)
+        y = self.arma.transform(X=self.x)
 
         self.assertEqual(self.n, len(y))
 
-    def test_output_u_matches_input(self):
-        _, u_out = self.arma.transform(U=self.u, return_input=True)
+    def test_output_x_matches_input(self):
+        _, x_out = self.arma.transform(X=self.x, return_input=True)
 
-        np.testing.assert_allclose(self.u, u_out)
+        np.testing.assert_allclose(self.x, x_out)
 
     def test_single_sample(self):
         sample = 0.4
-        y = self.arma.transform(U=[sample])
+        y = self.arma.transform(X=[sample])
 
         ar_part = np.dot(np.flip(self.ic[0]), self.arma.a)
         ma_part = sample + np.dot(np.flip(self.ic[1]), self.arma.b)
@@ -107,49 +107,49 @@ class TestArmaTransform(unittest.TestCase):
 
         # transform in two parts
         n1 = 2 * self.n // 9
-        u1 = self.u[:n1]
-        u2 = self.u[n1:]
-        y1 = self.arma.transform(U=u1)
-        y2 = self.arma.transform(U=u2)
+        x1 = self.x[:n1]
+        x2 = self.x[n1:]
+        y1 = self.arma.transform(X=x1)
+        y2 = self.arma.transform(X=x2)
 
         y = np.hstack((y1, y2))
 
         # transform all at once
-        y_exp = arma_copy.transform(U=self.u)
+        y_exp = arma_copy.transform(X=self.x)
 
         np.testing.assert_allclose(y, y_exp)
 
-    def test_raises_value_error_if_u_callable_and_n_samples_missing(self):
+    def test_raises_value_error_if_x_callable_and_n_samples_missing(self):
         with self.assertRaises(ValueError):
-            self.arma.transform(U=lambda size: np.zeros(size))
+            self.arma.transform(X=lambda size: np.zeros(size))
 
-    def test_raises_value_error_if_no_u_and_no_n_samples(self):
+    def test_raises_value_error_if_no_x_and_no_n_samples(self):
         with self.assertRaises(ValueError):
             self.arma.transform()
 
-    def test_raises_value_error_if_no_u_and_no_default_source(self):
+    def test_raises_value_error_if_no_x_and_no_default_source(self):
         with self.assertRaises(ValueError):
             self.arma.transform(5)
 
     def test_works_with_callable_source(self):
         arma2 = self.create_initial_arma()
 
-        y1, u1 = self.arma.transform(U=self.u, return_input=True)
-        y2, u2 = arma2.transform(self.n, U=lambda size: self.u, return_input=True)
+        y1, x1 = self.arma.transform(X=self.x, return_input=True)
+        y2, x2 = arma2.transform(self.n, X=lambda size: self.x, return_input=True)
 
         np.testing.assert_allclose(y1, y2)
-        np.testing.assert_allclose(u1, u2)
+        np.testing.assert_allclose(x1, x2)
 
     def test_works_with_callable_source_different_n_samples(self):
         arma2 = self.create_initial_arma()
 
         n2 = self.n // 3
 
-        y1, u1 = self.arma.transform(U=self.u[:n2], return_input=True)
-        y2, u2 = arma2.transform(n2, U=lambda size: self.u[:size], return_input=True)
+        y1, x1 = self.arma.transform(X=self.x[:n2], return_input=True)
+        y2, x2 = arma2.transform(n2, X=lambda size: self.x[:size], return_input=True)
 
         np.testing.assert_allclose(y1, y2)
-        np.testing.assert_allclose(u1, u2)
+        np.testing.assert_allclose(x1, x2)
 
     def test_input_is_initialized_according_to_initial_conditions_for_u(self):
         self.assertAlmostEqual(self.arma.input_, self.ic[1][-1])
@@ -158,31 +158,31 @@ class TestArmaTransform(unittest.TestCase):
         self.assertAlmostEqual(self.arma.output_, self.ic[0][-1])
 
     def test_input_set_to_last_input_value(self):
-        self.arma.transform(U=self.u)
-        self.assertAlmostEqual(self.arma.input_, self.u[-1])
+        self.arma.transform(X=self.x)
+        self.assertAlmostEqual(self.arma.input_, self.x[-1])
 
     def test_output_set_to_last_output_value(self):
-        y = self.arma.transform(U=self.u)
+        y = self.arma.transform(X=self.x)
         self.assertAlmostEqual(self.arma.output_, y[-1])
 
     def test_chunk_hint_does_not_affect_output(self):
         arma2 = self.create_initial_arma()
 
-        y1, u1 = self.arma.transform(U=self.u, chunk_hint=13, return_input=True)
-        y2, u2 = arma2.transform(
-            self.n, U=lambda size: self.u, chunk_hint=25, return_input=True
+        y1, x1 = self.arma.transform(X=self.x, return_input=True, chunk_hint=13)
+        y2, x2 = arma2.transform(
+            self.n, X=lambda size: self.x, return_input=True, chunk_hint=25
         )
 
         np.testing.assert_allclose(y1, y2)
-        np.testing.assert_allclose(u1, u2)
+        np.testing.assert_allclose(x1, x2)
 
 
 class TestTransformDefaultSource(unittest.TestCase):
     def setUp(self):
         rng = default_rng(5)
         self.n = 15
-        self.u = rng.normal(size=self.n)
-        self.callable = lambda size: self.u[:size]
+        self.x = rng.normal(size=self.n)
+        self.callable = lambda size: self.x[:size]
         self.arma = self.create_initial_arma(self.callable)
 
     @staticmethod
@@ -190,33 +190,33 @@ class TestTransformDefaultSource(unittest.TestCase):
         return Arma([-1.1, -0.6, -0.1], [0.8, 0.2], default_source=default_source)
 
     def test_default_source_same_as_u_callable(self):
-        y1, u1 = self.arma.transform(self.n, return_input=True)
+        y1, x1 = self.arma.transform(self.n, return_input=True)
 
         arma2 = self.create_initial_arma(None)
-        y2, u2 = arma2.transform(self.n, U=self.callable, return_input=True)
+        y2, x2 = arma2.transform(self.n, X=self.callable, return_input=True)
 
         np.testing.assert_allclose(y1, y2)
-        np.testing.assert_allclose(u1, u2)
+        np.testing.assert_allclose(x1, x2)
 
     def test_default_source_same_as_u_callable_partial_n(self):
         n = self.n // 2
-        y1, u1 = self.arma.transform(n, return_input=True)
+        y1, x1 = self.arma.transform(n, return_input=True)
 
         arma2 = self.create_initial_arma(None)
-        y2, u2 = arma2.transform(n, U=self.callable, return_input=True)
+        y2, x2 = arma2.transform(n, X=self.callable, return_input=True)
 
         np.testing.assert_allclose(y1, y2)
-        np.testing.assert_allclose(u1, u2)
+        np.testing.assert_allclose(x1, x2)
 
     def test_default_source_same_as_u_matrix_partial_n(self):
         n = self.n // 3
-        y1, u1 = self.arma.transform(n, return_input=True)
+        y1, x1 = self.arma.transform(n, return_input=True)
 
         arma2 = self.create_initial_arma(None)
-        y2, u2 = arma2.transform(U=self.u[:n], return_input=True)
+        y2, x2 = arma2.transform(X=self.x[:n], return_input=True)
 
         np.testing.assert_allclose(y1, y2)
-        np.testing.assert_allclose(u1, u2)
+        np.testing.assert_allclose(x1, x2)
 
 
 class TestArmaTransformPureAr(unittest.TestCase):
@@ -226,7 +226,7 @@ class TestArmaTransformPureAr(unittest.TestCase):
         ar = Arma([alpha], [], initial_conditions=([y0], []))
 
         n = 10
-        y = ar.transform(n, U=lambda size: np.zeros(size))
+        y = ar.transform(n, X=lambda size: np.zeros(size))
 
         y_exp = y0 * alpha ** np.arange(1, n + 1)
         np.testing.assert_allclose(y, y_exp)
@@ -244,13 +244,13 @@ class TestArmaTransformPureMa(unittest.TestCase):
         ma = Arma([], b)
 
         n = 52
-        u = rng.normal(size=n)
+        x = rng.normal(size=n)
 
-        y = ma.transform(U=u)
+        y = ma.transform(X=x)
 
-        u_padded = np.hstack((np.zeros(q), u))
+        x_padded = np.hstack((np.zeros(q), x))
         b_ext = np.hstack(([1], b))
-        y_exp = np.convolve(u_padded, b_ext, mode="valid")
+        y_exp = np.convolve(x_padded, b_ext, mode="valid")
 
         np.testing.assert_allclose(y, y_exp)
 
@@ -384,8 +384,8 @@ class TestArmaInverse(unittest.TestCase):
         arma = Arma([-1.1, -0.6, -0.1], [0.5, 0.3])
         inv_arma = arma.inverse()
 
-        y = arma.transform(U=self.u)
-        u_again = inv_arma.transform(U=y)
+        y = arma.transform(X=self.u)
+        u_again = inv_arma.transform(X=y)
 
         np.testing.assert_allclose(self.u, u_again)
 
@@ -393,8 +393,8 @@ class TestArmaInverse(unittest.TestCase):
         arma = Arma([1.3, -0.8, 0.2, -0.1], [-0.3, 0.5], bias=0.6)
         inv_arma = arma.inverse()
 
-        y = arma.transform(U=self.u)
-        u_again = inv_arma.transform(U=y)
+        y = arma.transform(X=self.u)
+        u_again = inv_arma.transform(X=y)
 
         np.testing.assert_allclose(self.u, u_again)
 
@@ -404,7 +404,7 @@ class TestArmaBias(unittest.TestCase):
         bias = 0.75
         arma = Arma([], [], bias=bias)
 
-        y = arma.transform(U=np.zeros(15))
+        y = arma.transform(X=np.zeros(15))
 
         np.testing.assert_allclose(y, bias)
 
@@ -413,14 +413,14 @@ class TestArmaBias(unittest.TestCase):
         arma = Arma([-1.1, -0.6, -0.1], [0.5, 0.3], bias=bias)
 
         # the asymptotic value y0 should be given by
-        # y0 * (1 - sum(a)) = bias + u0 * (1 + sum(b))
-        # so: y0 = (bias + u0 * (1 + sum(b))) / (1 - sum(a))
-        u0 = -0.5
+        # y0 * (1 - sum(a)) = bias + x0 * (1 + sum(b))
+        # so: y0 = (bias + x0 * (1 + sum(b))) / (1 - sum(a))
+        x0 = -0.5
         # give it enough time to converge
         n = 1000
-        y = arma.transform(U=u0 * np.ones(n))
+        y = arma.transform(X=x0 * np.ones(n))
 
-        y0 = (bias + u0 * (1 + np.sum(arma.b))) / (1 - np.sum(arma.a))
+        y0 = (bias + x0 * (1 + np.sum(arma.b))) / (1 - np.sum(arma.a))
         self.assertAlmostEqual(y[-1], y0)
 
 
@@ -434,16 +434,16 @@ class TestArmaCopy(unittest.TestCase):
     def test_sample_n1_then_copy_then_sample_n2_same_as_sample_n1_plus_n2(self):
         n = 90
         rng = default_rng(2)
-        u = rng.normal(size=n)
+        x = rng.normal(size=n)
 
         n1 = 3 * n // 5
         arma1 = self.createArma()
-        y_exp = arma1.transform(U=u)
+        y_exp = arma1.transform(X=x)
 
         arma2 = self.createArma()
-        y1 = arma2.transform(U=u[:n1])
+        y1 = arma2.transform(X=x[:n1])
         arma2_copy = arma2.copy()
-        y2 = arma2_copy.transform(U=u[n1:])
+        y2 = arma2_copy.transform(X=x[n1:])
 
         np.testing.assert_allclose(y_exp, np.hstack((y1, y2)))
 
@@ -738,20 +738,20 @@ class TestArmaSourceScaling(unittest.TestCase):
         self.arma = Arma(self.a, self.b, source_scaling=self.source_scaling)
         self.arma_alt = Arma(self.a, self.b, source_scaling=1)
 
-        self.y, self.u = self.arma.transform(U=self.source_data, return_input=True)
-        self.y_alt, self.u_alt = self.arma_alt.transform(
-            U=self.source_data, return_input=True
+        self.y, self.x = self.arma.transform(X=self.source_data, return_input=True)
+        self.y_alt, self.x_alt = self.arma_alt.transform(
+            X=self.source_data, return_input=True
         )
 
     def test_output_scaled_by_appropriate_factor(self):
         np.testing.assert_allclose(self.y, self.source_scaling * self.y_alt)
 
     def test_input_not_scaled(self):
-        np.testing.assert_allclose(self.u_alt, self.u)
+        np.testing.assert_allclose(self.x_alt, self.x)
 
     def test_default_scaling_is_one(self):
         arma_def = Arma(self.a, self.b)
-        y_def = arma_def.transform(U=self.source_data)
+        y_def = arma_def.transform(X=self.source_data)
 
         np.testing.assert_allclose(y_def, self.y_alt)
 
@@ -769,14 +769,14 @@ class TestArmaMonitor(unittest.TestCase):
 
     def test_monitor_output_matches_transform_retval(self):
         monitor = AttributeMonitor(["output_"])
-        y_out = self.arma.transform(U=self.source_data, monitor=monitor)
+        y_out = self.arma.transform(X=self.source_data, monitor=monitor)
 
         self.assertTrue(hasattr(monitor.history_, "output_"))
         np.testing.assert_allclose(monitor.history_.output_, y_out)
 
     def test_monitor_input_matches_actual_input(self):
         monitor = AttributeMonitor(["input_"])
-        self.arma.transform(U=self.source_data, monitor=monitor)
+        self.arma.transform(X=self.source_data, monitor=monitor)
 
         self.assertTrue(hasattr(monitor.history_, "input_"))
         np.testing.assert_allclose(monitor.history_.input_, self.source_data)
@@ -790,7 +790,7 @@ class TestArmaMonitor(unittest.TestCase):
 
     def test_monitor_is_initialized_on_empty_U(self):
         monitor = AttributeMonitor(["input_", "output_"])
-        self.arma.transform(U=[], monitor=monitor)
+        self.arma.transform(X=[], monitor=monitor)
 
         self.assertTrue(hasattr(monitor.history_, "input_"))
         self.assertTrue(hasattr(monitor.history_, "output_"))
@@ -798,11 +798,11 @@ class TestArmaMonitor(unittest.TestCase):
     def test_chunk_hint_does_not_affect_monitoring(self):
         names = ["input_", "output_"]
         monitor1 = AttributeMonitor(names)
-        self.arma.transform(U=self.source_data, monitor=monitor1, chunk_hint=11)
+        self.arma.transform(X=self.source_data, monitor=monitor1, chunk_hint=11)
 
         monitor2 = AttributeMonitor(names)
         arma2 = Arma(self.a, self.b)
-        arma2.transform(U=self.source_data, monitor=monitor2, chunk_hint=23)
+        arma2.transform(X=self.source_data, monitor=monitor2, chunk_hint=23)
 
         np.testing.assert_allclose(monitor1.history_.input_, monitor2.history_.input_)
         np.testing.assert_allclose(monitor1.history_.output_, monitor2.history_.output_)

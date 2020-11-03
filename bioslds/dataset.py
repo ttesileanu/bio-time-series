@@ -241,7 +241,7 @@ class RandomArmaDataset(Sequence[SwitchingSignal]):
 
         y, u, usage_seq = arma_hsmm.transform(
             self.n_samples,
-            U=source,
+            X=source,
             initial_conditions=self.initial_conditions,
             return_input=True,
             return_usage_seq=True,
