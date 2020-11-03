@@ -35,6 +35,8 @@ class CrosscorrelationRegressor(object):
         Number of models in mixture.
     n_features : int
         Number of predictor variables (features).
+    n_components : int
+        Number of output dimensions. This is an alias for `n_models`.
     """
 
     def __init__(
@@ -68,6 +70,7 @@ class CrosscorrelationRegressor(object):
         """
         self.n_models = n_models
         self.n_features = n_features
+        self.n_components = self.n_models
 
         if nsm_kws is None:
             nsm_kws = {}

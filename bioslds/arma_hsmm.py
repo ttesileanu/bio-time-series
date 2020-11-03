@@ -132,6 +132,10 @@ class ArmaHSMM(object):
 
     Attributes
     ==========
+    n_features : int
+        Number of input dimensions. This is always equal to 1.
+     n_components : int
+        Number of output dimensions.This is always equal to 1.
     models
         Sequence of models to use.
     smm
@@ -151,6 +155,9 @@ class ArmaHSMM(object):
         """
         self.models = models
         self.smm = SemiMarkov(len(models), **kwargs)
+
+        self.n_features = 1
+        self.n_components = 1
 
     def transform(
         self,

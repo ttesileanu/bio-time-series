@@ -18,6 +18,10 @@ class TestCrosscorrelationRegressorRegressorInit(unittest.TestCase):
     def test_n_models_attribute(self):
         self.assertEqual(self.xcorr.n_models, self.n_models)
 
+    def test_n_components_attribute(self):
+        self.assertTrue(hasattr(self.xcorr, "n_components"))
+        self.assertEqual(self.xcorr.n_components, self.n_models)
+
     def test_n_features_attribute(self):
         self.assertEqual(self.xcorr.n_features, self.n_features)
 

@@ -17,6 +17,10 @@ class TestBioWTARegressorInit(unittest.TestCase):
     def test_n_models_attribute(self):
         self.assertEqual(self.wta.n_models, self.n_models)
 
+    def test_n_components_attribute(self):
+        self.assertTrue(hasattr(self.wta, "n_components"))
+        self.assertEqual(self.wta.n_components, self.n_models)
+
     def test_n_features_attribute(self):
         self.assertEqual(self.wta.n_features, self.n_features)
 

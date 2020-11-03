@@ -33,6 +33,8 @@ class BioWTARegressor(object):
         Number of models in mixture.
     n_features : int
         Number of predictor variables (features).
+    n_components : int
+        Number of output dimensions. This is an alias for `n_models`.
     rate : float, np.ndarray, callable
         Learning rate or learning schedule for the regression weights.
     weights_ : array, shape `(n_models, n_features)`
@@ -95,6 +97,7 @@ class BioWTARegressor(object):
         """
         self.n_models = n_models
         self.n_features = n_features
+        self.n_components = self.n_models
 
         if callable(rate) or not hasattr(rate, "__len__"):
             self.rate = rate

@@ -220,6 +220,16 @@ class TestArmaHSMM(unittest.TestCase):
 
         self.armas = [self.arma1, self.arma2]
 
+    def test_n_features_is_one(self):
+        arma_hsmm = ArmaHSMM(self.armas)
+        self.assertTrue(hasattr(arma_hsmm, "n_features"))
+        self.assertEqual(arma_hsmm.n_features, 1)
+
+    def test_n_components_is_one(self):
+        arma_hsmm = ArmaHSMM(self.armas)
+        self.assertTrue(hasattr(arma_hsmm, "n_components"))
+        self.assertEqual(arma_hsmm.n_components, 1)
+
     def test_transform_returns_triple_when_both_input_and_usage_seq_requested(self):
         arma_hsmm = ArmaHSMM(self.armas)
         res = arma_hsmm.transform(100, return_input=True, return_usage_seq=True)
