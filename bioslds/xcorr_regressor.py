@@ -86,5 +86,4 @@ class CrosscorrelationRegressor(ChainMixin):
         nsm_kws.setdefault("rate", nsm_rate)
         self.nsm = NonRecurrent(self.n_features, self.n_models, **nsm_kws)
 
-        self._transformer_names = ["xcorr", "nsm"]
-        super().__init__()
+        super().__init__(["xcorr", "nsm"])

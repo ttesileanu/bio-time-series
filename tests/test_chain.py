@@ -17,8 +17,7 @@ class TestChainSetupNDimensions(unittest.TestCase):
                 self.trafo1 = mock.Mock(n_features=n1, n_components=n2)
                 self.trafo2 = mock.Mock(n_features=n2, n_components=n3)
 
-                self._transformer_names = ["trafo1", "trafo2"]
-                super().__init__()
+                super().__init__(["trafo1", "trafo2"])
 
         self.ns = [2, 4, 3]
         self.chain = MockTransformerChainSimple(*self.ns)
@@ -41,12 +40,12 @@ class TestChainSetupNDimensions(unittest.TestCase):
 class MockTransformerChain(ChainMixin):
     def __init__(self, *trafos):
         n = len(trafos)
-        self._transformer_names = [f"trafo{_}" for _ in range(n)]
+        names = [f"trafo{_}" for _ in range(n)]
 
-        for i, name in enumerate(self._transformer_names):
+        for i, name in enumerate(names):
             setattr(self, name, trafos[i])
 
-        super().__init__()
+        super().__init__(names)
 
 
 class TestChainTransform(unittest.TestCase):

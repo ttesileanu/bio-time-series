@@ -14,21 +14,26 @@ class ChainMixin(object):
     This implements a `transform` method that goes through the transformers whose names
     must be in `self._transformer_names`, processing the data from input to output. It
     handles proper monitoring and progress updating.
+
+    Attributes
+    ==========
+    _transformer_names : Sequence
+        List of names of arguments that are transformers to be used in the chain.
+    _transformers : Sequence
+        List of aliases for the transformers to be used in the chain.
     """
 
-    def __init__(self):
+    def __init__(self, transformer_names):
         """ Initialize a chain of transformers.
 
-        This creates `self._transformers` based on `self._transformer_names`, then sets
-        up te number of input and output dimensions, `self.n_features` and
-        `self.n_components`.
+        This creates `self._transformers` and `self._transformer_names` based on
+        `transformer_names`, then sets up te number of input and output dimensions,
+        `self.n_features` and `self.n_components`.
 
-        Thus this constructor should be called *after* the transformers are initialized
-        in the base-class constructor.
+        This means that this constructor should be called *after* the transformers are
+        initialized in the base-class constructor.
         """
-        if not hasattr(self, "_transformer_names"):
-            self._transformer_names = []
-
+        self._transformer_names = list(transformer_names)
         self._transformers = [getattr(self, name) for name in self._transformer_names]
 
         self.n_features = self._transformers[0].n_features
