@@ -87,3 +87,25 @@ class CrosscorrelationRegressor(ChainMixin):
         self.nsm = NonRecurrent(self.n_features, self.n_models, **nsm_kws)
 
         super().__init__(["xcorr", "nsm"])
+
+    def __repr__(self) -> str:
+        s = (
+            f"CrosscorrelationRegressor("
+            f"n_models={self.n_models}, "
+            f"n_features={self.n_features}, "
+            f"nsm={repr(self.nsm)}, "
+            f"xcorr={repr(self.xcorr)}, "
+            f")"
+        )
+        return s
+
+    def __str__(self) -> str:
+        s = (
+            f"CrosscorrelationRegressor("
+            f"n_models={self.n_models}, "
+            f"n_features={self.n_features}, "
+            f"nsm={str(self.nsm)}, "
+            f"xcorr={str(self.xcorr)}, "
+            f")"
+        )
+        return s

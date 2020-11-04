@@ -338,5 +338,35 @@ class TestCrosscorrelationRegressorTransformMonitor(unittest.TestCase):
         mock_progress.assert_called()
 
 
+class TestCrosscorrelationRegressorStrAndRepr(unittest.TestCase):
+    def setUp(self):
+        self.n_models = 4
+        self.n_features = 3
+
+        self.xcorr = CrosscorrelationRegressor(self.n_models, self.n_features, rng=1)
+
+    def test_repr(self):
+        s = repr(self.xcorr)
+
+        self.assertTrue(s.startswith("CrosscorrelationRegressor("))
+        self.assertTrue(s.endswith(")"))
+
+        self.assertIn("n_features=", s)
+        self.assertIn("n_models=", s)
+        self.assertIn("nsm=", s)
+        self.assertIn("xcorr=", s)
+
+    def test_str(self):
+        s = str(self.xcorr)
+
+        self.assertTrue(s.startswith("CrosscorrelationRegressor("))
+        self.assertTrue(s.endswith(")"))
+
+        self.assertIn("n_features=", s)
+        self.assertIn("n_models=", s)
+        self.assertIn("nsm=", s)
+        self.assertIn("xcorr=", s)
+
+
 if __name__ == "__main__":
     unittest.main()
