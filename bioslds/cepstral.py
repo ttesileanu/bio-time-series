@@ -149,7 +149,7 @@ class OnlineCepstralNorm(object):
         )
         self.l_late_ = np.asarray([np.eye(self.order) for _ in range(self.n_features)])
 
-        self._mode = "naive"
+        self._mode = "numba"
 
     # noinspection PyUnusedLocal
     def transform(
@@ -175,10 +175,31 @@ class OnlineCepstralNorm(object):
         sequence, with shape `(n_samples, n_features)`.
         """
         n = len(X)
-        gamma = 1 - self.rate
-        alpha = np.sqrt(1 - gamma ** 2)
 
         norms = np.zeros((n, self.n_components))
+
+        fct_mapping = {"naive": self._transform_naive, "numba": self._transform_numba}
+        fct = fct_mapping[self._mode]
+
+        # noinspection PyArgumentList
+        fct(X, norms)
+
+        self.output_[:] = norms[-1]
+
+        if monitor is not None:
+            monitor.setup(n)
+            obj = SimpleNamespace(output_=norms)
+            monitor.record_batch(obj)
+
+        return norms
+
+    def _transform_naive(
+        self, X: Sequence, norms: np.ndarray,
+    ):
+        """ Perform the transform in pure Python code. """
+        n = len(X)
+        gamma = 1 - self.rate
+        alpha = np.sqrt(1 - gamma ** 2)
         for i in range(n):
             crt_x = X[i]
 
@@ -204,14 +225,16 @@ class OnlineCepstralNorm(object):
 
                 norms[i, k] = 2 * np.sum(pos_terms - neg_terms)
 
-        self.output_[:] = norms[-1]
+    def _transform_numba(
+        self, X: Sequence, norms: np.ndarray,
+    ):
+        """ Perform the transform using Numba. """
+        X = np.asarray(X)
+        gamma = 1 - self.rate
 
-        if monitor is not None:
-            monitor.setup(n)
-            obj = SimpleNamespace(output_=norms)
-            monitor.record_batch(obj)
-
-        return norms
+        _perform_numba_transform(
+            X, norms, gamma, self.history_, self.l_total_, self.l_late_
+        )
 
     def __repr__(self) -> str:
         s = (
@@ -222,4 +245,43 @@ class OnlineCepstralNorm(object):
         )
         return s
 
-    _available_modes = ["naive"]
+    _available_modes = ["naive", "numba"]
+
+
+@njit
+def _perform_numba_transform(
+    X: np.ndarray,
+    norms: np.ndarray,
+    gamma: float,
+    history: np.ndarray,
+    l_total: np.ndarray,
+    l_late: np.ndarray,
+):
+    n = len(X)
+    alpha = np.sqrt(1 - gamma ** 2)
+    order = len(history) // 2
+    n_features = X.shape[1]
+    for i in range(n):
+        crt_x = X[i]
+
+        # add samples to history
+        history[:-1] = history[1:]
+        history[-1] = crt_x
+
+        # apply the discount factor
+        l_total *= gamma
+        l_late *= gamma
+
+        # ...then add columns to the Hankel matrices
+        v = alpha * history
+        v_late = v[order:]
+
+        for k in range(n_features):
+            add_lq_column(l_total[k], v[:, k])
+            add_lq_column(l_late[k], v_late[:, k])
+
+            # calculate cepstral norm
+            neg_terms = np.log(np.abs(np.diag(l_total[k])[order:]))
+            pos_terms = np.log(np.abs(np.diag(l_late[k])))
+
+            norms[i, k] = 2 * np.sum(pos_terms - neg_terms)
