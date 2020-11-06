@@ -7,7 +7,6 @@ from typing import Tuple, Sequence, Optional
 from numba import njit
 
 from bioslds.monitor import AttributeMonitor
-from bioslds.utils import to_hankel
 
 
 @njit
@@ -150,6 +149,8 @@ class OnlineCepstralNorm(object):
         )
         self.l_late_ = np.asarray([np.eye(self.order) for _ in range(self.n_features)])
 
+        self._mode = "naive"
+
     # noinspection PyUnusedLocal
     def transform(
         self,
@@ -220,3 +221,5 @@ class OnlineCepstralNorm(object):
             f"rate={self.rate})"
         )
         return s
+
+    _available_modes = ["naive"]
