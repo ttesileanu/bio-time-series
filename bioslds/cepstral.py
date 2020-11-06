@@ -109,6 +109,8 @@ class OnlineCepstralNorm(object):
         the late Hankel matrix, or half the number of rows in the total Hankel matrix.
     rate : float
         Learning rate.
+    negative : bool
+        If true, the negative cepstral norm is returned.
     output_ : np.ndarray
         Current output, which is the estimate of the cepstral norm for each sequence.
     history_ : np.ndarray
@@ -120,7 +122,9 @@ class OnlineCepstralNorm(object):
         Current estimate of the L factor for the later half of the Hankel matrix.
     """
 
-    def __init__(self, n_features: int, order: int, rate: float = 0.01):
+    def __init__(
+        self, n_features: int, order: int, rate: float = 0.01, negative: bool = False
+    ):
         """ Initialize the cepstral-norm calculator.
 
         The initial L factors (`self.l_total_` and `self.l_late_`) are set to the
@@ -134,12 +138,16 @@ class OnlineCepstralNorm(object):
             Number of cepstral coefficients to use.
         rate
             Learning rate.
+        negative
+            If true, the negative of the cepstral norm is returned.
         """
         self.n_features = n_features
         self.n_components = n_features
 
         self.order = order
         self.rate = rate
+
+        self.negative = negative
 
         self.output_ = np.zeros(self.n_features)
         self.history_ = np.zeros((2 * self.order, self.n_features))
@@ -183,6 +191,9 @@ class OnlineCepstralNorm(object):
 
         # noinspection PyArgumentList
         fct(X, norms)
+
+        if self.negative:
+            norms = -norms
 
         self.output_[:] = norms[-1]
 

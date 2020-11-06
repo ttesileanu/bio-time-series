@@ -258,6 +258,30 @@ class TestOnlineCesptralNormTransform(unittest.TestCase):
         np.testing.assert_allclose(monitor.history_.output_, norms)
 
 
+class TestOnlineCepstralNormNegative(unittest.TestCase):
+    def setUp(self):
+        self.n_features = 4
+        self.order = 4
+        self.rate = 0.01
+        self.cepstral = OnlineCepstralNorm(
+            self.n_features, order=self.order, rate=self.rate
+        )
+
+        self.rng = np.random.default_rng(33)
+        self.n_samples = 500
+        self.x = self.rng.normal(size=(self.n_samples, self.n_features))
+
+        self.norms = self.cepstral.transform(X=self.x)
+
+    def test_negative_returned_when_asked_for(self):
+        cepstral_neg = OnlineCepstralNorm(
+            self.n_features, order=self.order, rate=self.rate, negative=True
+        )
+        norms_neg = cepstral_neg.transform(X=self.x)
+
+        np.testing.assert_allclose(norms_neg, -self.norms)
+
+
 class TestOnlineCesptralNormStrAndRepr(unittest.TestCase):
     def setUp(self):
         self.n_features = 3
