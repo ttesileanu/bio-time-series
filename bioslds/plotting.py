@@ -22,7 +22,7 @@ mpl.rcParams["axes.prop_cycle"] = mpl.cycler(
         "#A23E48",  # English red
         "#FF8C42",  # mango tango
         "#001021",  # rich black FOGRA 29
-        "#FFF275",  # corn
+        "#523A34",  # dark liver horses
     ]
 )
 
