@@ -435,6 +435,56 @@ class TestBioWTARegressorLatentPrior(unittest.TestCase):
         np.testing.assert_allclose(r1, r2)
 
 
+class TestBioWTARegressorArbitraryStartProbAndTransMat(unittest.TestCase):
+    def setUp(self):
+        self.n_models = 3
+        self.n_features = 4
+        self.rng = np.random.default_rng(9)
+
+        def normalize_v(v: np.ndarray) -> np.ndarray:
+            return v / np.sum(v)
+
+        self.start_prob = normalize_v(self.rng.uniform(size=self.n_models))
+        self.trans_mat = [
+            normalize_v(self.rng.uniform(size=self.n_models))
+            for _ in range(self.n_models)
+        ]
+
+        self.kwargs = {
+            "n_models": self.n_models,
+            "n_features": self.n_features,
+            "start_prob": self.start_prob,
+            "trans_mat": self.trans_mat,
+        }
+        self.wta = BioWTARegressor(**self.kwargs)
+
+        self.n_samples = 79
+        self.predictors = self.rng.normal(size=(self.n_samples, self.n_features))
+        self.dependent = self.rng.normal(size=self.n_samples)
+
+    def test_output_of_repeated_calls_to_transform_equivalent_to_single_call(self):
+        n1 = 4 * self.n_samples // 7
+        r1 = self.wta.transform(self.predictors[:n1], self.dependent[:n1])
+        r2 = self.wta.transform(self.predictors[n1:], self.dependent[n1:])
+
+        wta_again = BioWTARegressor(**self.kwargs)
+        r = wta_again.transform(self.predictors, self.dependent)
+
+        np.testing.assert_allclose(r, np.vstack((r1, r2)))
+
+    def test_weight_change_from_repeated_transform_calls_equivalent_to_one_call(self):
+        n1 = 2 * self.n_samples // 7
+        n2 = 3 * self.n_samples // 7
+        self.wta.transform(self.predictors[:n1], self.dependent[:n1])
+        self.wta.transform(self.predictors[n1 : n1 + n2], self.dependent[n1 : n1 + n2])
+        self.wta.transform(self.predictors[n1 + n2 :], self.dependent[n1 + n2 :])
+
+        wta_again = BioWTARegressor(**self.kwargs)
+        wta_again.transform(self.predictors, self.dependent)
+
+        np.testing.assert_allclose(self.wta.weights_, wta_again.weights_)
+
+
 class TestBioWTARegressorDegenerateStartProbOrTransMat(unittest.TestCase):
     def setUp(self):
         self.n_models = 4

@@ -137,6 +137,8 @@ class BioWTARegressor(object):
 
         self.output_ = np.zeros(self.n_models)
 
+        self._t = 0
+
         self._mode = "numba"
 
     def transform(
@@ -232,6 +234,8 @@ class BioWTARegressor(object):
             X, y, r, progress=progress, monitor=monitor, chunk_hint=chunk_hint,
         )
 
+        self._t += n
+
         if not return_history:
             return r
         else:
@@ -258,14 +262,17 @@ class BioWTARegressor(object):
 
         log_trans_mat = _log_safe_zero(self.trans_mat_)
 
-        last_k = None
+        if self._t == 0:
+            last_k = None
+        else:
+            last_k = np.argmax(self.output_)
         for i, (crt_x, crt_y) in enumerate(zip(itX, y)):
             crt_pred = np.dot(self.weights_, crt_x)
             crt_eps = crt_y - crt_pred
 
             # find best-fitting model:
             # start with prior on latent states
-            if i == 0:
+            if i + self._t == 0:
                 crt_obj = _log_safe_zero(self.start_prob_)
             else:
                 crt_obj = np.copy(log_trans_mat[last_k])
@@ -312,7 +319,10 @@ class BioWTARegressor(object):
         log_start_prob = _log_safe_zero(self.start_prob_)
         log_trans_mat = _log_safe_zero(self.trans_mat_)
 
-        crt_last_r = None
+        if self._t == 0:
+            crt_last_r = None
+        else:
+            crt_last_r = self.output_
         for chunk_start in range(0, len(X), chunk_hint):
             crt_range = slice(chunk_start, chunk_start + chunk_hint)
             crt_X = X[crt_range]
