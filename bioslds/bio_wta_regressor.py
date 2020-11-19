@@ -12,20 +12,23 @@ from numba import njit
 
 
 class BioWTARegressor(object):
-    """ A class implementing a biologically plausible winner-take-all algorithm
-    that performs a multi-modal regression in a streaming setting.
+    """ A class implementing a biologically plausible winner-take-all algorithm that
+    performs a multi-modal regression in a streaming setting.
 
-    Specifically, this learns a set of regressions, with coefficients `w[k, :]`,
-    such that we have
+    Specifically, this learns a set of regressions, with coefficients `w[k, :]`, such
+    that we have
         y[t] = sum_k z[t][k] * np.dot(w[k, :], x[t]) ,
-    where `z[t]` is a one-hot encoding of the model that should be used at time
-    `t` (`z[t][k] == 1` if model `k` is used), `y[t]` is the output, and `x[t]`
-    is the input, or predictor, variable.
+    where `z[t]` is a one-hot encoding of the model that should be used at time `t`
+    (`z[t][k] == 1` if model `k` is used), `y[t]` is the output, and `x[t]` is the
+    input, or predictor, variable.
 
-    This class attempts to fit both the coefficients `w[k, i]` and the state
-    assignments `z[t]`, and do so on-the-fly, as the data is being processed.
-    Moreover, it uses an implementation that has a simple interpretation in
-    terms of a rate-based biologically plausible neural network.
+    This class attempts to fit both the coefficients `w[k, i]` and the state assignments
+    `z[t]`, and do so on-the-fly, as the data is being processed. Moreover, it uses an
+    implementation that has a simple interpretation in terms of a rate-based
+    biologically plausible neural network.
+
+    The winner-take-all approach can be softened by using the `temperature_` parameter
+    below.
 
     Attributes
     ==========
@@ -37,10 +40,11 @@ class BioWTARegressor(object):
         Number of output dimensions. This is an alias for `n_models`.
     rate : float, np.ndarray, callable
         Learning rate or learning schedule for the regression weights.
+    temperature : float
+        Parameter controlling the softness of the clustering, with 0 indicating the use
+        of an `argmax`, and higher values corresponding to softer `softmax` functions.
     weights_ : array, shape `(n_models, n_features)`
         Regression weights for each of the models.
-    prediction_ : float
-        Value of last best prediction from the model.
     start_prob_ : array of float, shape (n_models, )
         Distribution for the initial latent state. Currently this is fixed and cannot be
         learned.
@@ -48,6 +52,11 @@ class BioWTARegressor(object):
         Transition matrix for the latent state, with `trans_mat[i, j]` being the
         probability of transitioning from latent state (model) `i` to latent state
         (model) `j` at every time step. Currently this is fixed and cannot be learned.
+    prediction_ : float
+        Value of last best prediction from the model. This is weighted across models by
+        using the `output_`.
+    error_ : float
+        Difference between observed and predicted values, one for each model.
     output_ : array of float, shape (n_models, )
         Last latent state assignment. This corresponds to the last value returned from
         `transform`.
@@ -62,6 +71,7 @@ class BioWTARegressor(object):
         weights: Optional[Sequence] = None,
         start_prob: Optional[Sequence] = None,
         trans_mat: Optional[Union[float, Sequence]] = None,
+        temperature: float = 0,
     ):
         """ Initialize the regression model.
 
@@ -94,10 +104,15 @@ class BioWTARegressor(object):
             elements are set equal (i.e., uniform probability to transition to each of
             the other states). Currently the transition matrix is fixed and cannot be
             learned.
+        temperature
+            Parameter controlling the softness of the clustering, with 0 indicating the
+            use of an `argmax`, and higher values corresponding to softer `softmax`
+            functions.
         """
         self.n_models = n_models
         self.n_features = n_features
         self.n_components = self.n_models
+        self.temperature = temperature
 
         if callable(rate) or not hasattr(rate, "__len__"):
             self.rate = rate
@@ -135,6 +150,7 @@ class BioWTARegressor(object):
         else:
             self.trans_mat_ = np.ones((self.n_models, self.n_models)) / self.n_models
 
+        self.error_ = np.zeros(self.n_models)
         self.output_ = np.zeros(self.n_models)
 
         self._t = 0
@@ -182,12 +198,12 @@ class BioWTARegressor(object):
             A hint about how to chunk the learning. This may or may not be used. If it
             is, the progress function will only be called once per chunk.
 
-        If `return_history` is not false, returns an array `r` with shape `(n_samples,
-        n_models)` such  that `r[t, k]` shows, roughly, how likely it is that the sample
-        at time `t` was generated by model `k`. Note that this is not a full
-        probabilistic model, so this should not be taken literally.
+        If `return_history` is not false, returns the array `z` with shape `(n_samples,
+        n_models)` of one-hot cluster assignments. Roughly, `z[t, k]` shows how likely
+        it is that the sample at time `t` was generated by model `k`. Note that this is
+        not a full probabilistic model, so this should not be taken literally.
 
-        If `return_history` is true, returns a tuple `(r, history)` where `r` is the
+        If `return_history` is true, returns a tuple `(z, history)` where `z` is the
         output from above, and `history` is the `history_` attribute of the monitor that
         was used.
         """
@@ -266,32 +282,41 @@ class BioWTARegressor(object):
             last_k = None
         else:
             last_k = np.argmax(self.output_)
+
         for i, (crt_x, crt_y) in enumerate(zip(itX, y)):
             crt_pred = np.dot(self.weights_, crt_x)
             crt_eps = crt_y - crt_pred
+
+            self.error_[:] = crt_eps
 
             # find best-fitting model:
             # start with prior on latent states
             if i + self._t == 0:
                 crt_obj = _log_safe_zero(self.start_prob_)
             else:
-                crt_obj = np.copy(log_trans_mat[last_k])
+                crt_obj = np.dot(self.output_, log_trans_mat)
 
             crt_obj -= 0.5 * crt_eps ** 2
-            max_obj = np.max(crt_obj)
-            r0 = np.exp(crt_obj - max_obj)
-            r[i] = r0 / np.sum(r0)
 
-            k = r0.argmax()
+            if self.temperature != 0:
+                crt_obj /= self.temperature
+                max_obj = np.max(crt_obj)
+                r0 = np.exp(crt_obj - max_obj)
+                r[i] = r0 / np.sum(r0)
 
-            self.prediction_ = crt_pred[k]
+                k = None
+            else:
+                k = crt_obj.argmax()
+                r[i, k] = 1.0
+
+            self.prediction_ = np.dot(r[i], crt_pred)
             self.output_[:] = r[i]
             if monitor is not None:
                 monitor.record(self)
 
             crt_rate = self._rate_vector[i]
-            dw = (crt_rate * crt_eps[k]) * crt_x
-            self.weights_[k] += dw
+            dw = crt_rate * np.outer(r[i] * crt_eps, crt_x)
+            self.weights_ += dw
 
             last_k = k
 
@@ -333,24 +358,38 @@ class BioWTARegressor(object):
 
             crt_weights = np.zeros((crt_n, self.n_models, self.n_features))
             crt_predictions = np.zeros(crt_n)
+            crt_error = np.zeros((crt_n, self.n_models))
 
-            self.weights_ = _perform_transform(crt_X, crt_y, crt_r,
-                                               np.copy(self.weights_),
-                                               self._rate_vector, crt_last_r,
-                                               log_start_prob, log_trans_mat,
-                                               crt_weights, crt_predictions)
+            self.weights_ = _perform_transform(
+                crt_X,
+                crt_y,
+                crt_r,
+                np.copy(self.weights_),
+                self._rate_vector,
+                crt_last_r,
+                log_start_prob,
+                log_trans_mat,
+                crt_weights,
+                crt_predictions,
+                self.temperature,
+                crt_error,
+            )
 
             if pbar is not None:
                 pbar.update(crt_n)
             if monitor is not None:
                 monitor.record_batch(
                     SimpleNamespace(
-                        weights_=crt_weights, prediction_=crt_predictions, output_=crt_r
+                        weights_=crt_weights,
+                        prediction_=crt_predictions,
+                        output_=crt_r,
+                        error_=crt_error,
                     )
                 )
 
             crt_last_r = crt_r[-1]
             self.output_[:] = crt_last_r
+            self.error_[:] = crt_error[-1]
 
         if pbar is not None:
             pbar.close()
@@ -387,40 +426,41 @@ def _perform_transform(
     log_trans_mat: np.ndarray,
     weights: np.ndarray,
     predictions: np.ndarray,
+    temperature: float,
+    errors: np.ndarray,
 ) -> np.ndarray:
     n = len(y)
-    last_k = 0
     crt_obj = np.zeros(len(log_start_prob))
     for i in range(n):
         crt_x = X[i]
         crt_pred = np.dot(crt_weights, crt_x)
         crt_eps = y[i] - crt_pred
+        errors[i, :] = crt_eps
 
         # find best-fitting model:
         # start with prior on latent states
-        if i == 0:
-            if last_r is None:
-                crt_obj[:] = log_start_prob
-            else:
-                last_k = np.argmax(last_r)
-                crt_obj[:] = log_trans_mat[last_k]
+        if i == 0 and last_r is None:
+            crt_obj[:] = log_start_prob
         else:
-            crt_obj[:] = log_trans_mat[last_k]
+            crt_obj = np.dot(last_r, log_trans_mat)
 
         crt_obj -= 0.5 * crt_eps ** 2
-        max_obj = np.max(crt_obj)
-        r0 = np.exp(crt_obj - max_obj)
-        r[i, :] = r0 / np.sum(r0)
 
-        k = r0.argmax()
+        if temperature == 0:
+            k = crt_obj.argmax()
+            r[i, k] = 1.0
+        else:
+            crt_obj /= temperature
+            max_obj = np.max(crt_obj)
+            r0 = np.exp(crt_obj - max_obj)
+            r[i, :] = r0 / np.sum(r0)
 
-        if weights is not None:
-            weights[i, :, :] = crt_weights
-            predictions[i] = crt_pred[k]
+        weights[i, :, :] = crt_weights
+        predictions[i] = np.dot(r[i], crt_pred)
 
-        crt_weights[k, :] += (rate[i] * crt_eps[k]) * crt_x
+        crt_weights += rate[i] * np.outer(r[i] * crt_eps, crt_x)
 
-        last_k = k
+        last_r = r[i]
 
     return crt_weights
 

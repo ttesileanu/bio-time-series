@@ -90,7 +90,7 @@ class TestBioWTARegressorTransformDefaultInit(unittest.TestCase):
 
         np.testing.assert_allclose(sums, 1)
 
-    def test_output_is_softmax_of_minus_half_squared_error(self):
+    def test_output_is_argmin_of_squared_error_first_sample(self):
         ini_weights = np.copy(self.wta.weights_)
         x = self.predictors[[0], :]
         y = self.dependent[[0]]
@@ -101,9 +101,21 @@ class TestBioWTARegressorTransformDefaultInit(unittest.TestCase):
             w = ini_weights[i]
             err[i] = y[0] - np.dot(w, x[0])
 
-        np.testing.assert_allclose(
-            np.log(r[0]) - np.log(r[0][0]), -0.5 * (err ** 2 - err[0] ** 2)
+        r_exp = np.zeros(self.n_models)
+        r_exp[np.argmin(err)] = 1.0
+
+        np.testing.assert_allclose(r[0], r_exp)
+
+    def test_output_is_argmin_of_squared_monitored_error(self):
+        r, history = self.wta.transform(
+            self.predictors, self.dependent, monitor=["error_"]
         )
+
+        r_exp = np.zeros((self.n_samples, self.n_models))
+        for k in range(self.n_samples):
+            r_exp[k, np.argmin(np.abs(history.error_[k]))] = 1.0
+
+        np.testing.assert_allclose(r, r_exp)
 
     def test_raises_if_size_of_X_is_not_right(self):
         n_samples = 5
@@ -266,6 +278,131 @@ class TestBioWTARegressorTransformDefaultInit(unittest.TestCase):
 
         mock_progress.assert_called()
 
+    def test_prediction_is_based_on_hard_clustering_by_default(self):
+        weights0 = np.copy(self.wta.weights_)
+        r, history = self.wta.transform(
+            self.predictors[[0]], self.dependent[[0]], monitor=["prediction_"]
+        )
+        k = np.argmax(r[0])
+
+        pred = weights0 @ self.predictors[0]
+        self.assertAlmostEqual(history.prediction_[0], pred[k])
+
+
+class TestBioWTARegressorTransformTemperature(unittest.TestCase):
+    def setUp(self):
+        self.n_models = 4
+        self.n_features = 5
+        self.temperature = 1.0
+        self.wta = BioWTARegressor(
+            self.n_models, self.n_features, temperature=self.temperature
+        )
+
+        self.rng = np.random.default_rng(1)
+        self.n_samples = 85
+        self.predictors = self.rng.uniform(size=(self.n_samples, self.n_features))
+        self.dependent = self.rng.uniform(size=self.n_samples)
+
+    def test_output_is_softmax_of_minus_half_squared_error(self):
+        ini_weights = np.copy(self.wta.weights_)
+        x = self.predictors[[0], :]
+        y = self.dependent[[0]]
+        r = self.wta.transform(x, y)
+
+        err = np.zeros(self.n_models)
+        for i in range(self.n_models):
+            w = ini_weights[i]
+            err[i] = y[0] - np.dot(w, x[0])
+
+        np.testing.assert_allclose(
+            np.log(r[0]) - np.log(r[0][0]), -0.5 * (err ** 2 - err[0] ** 2)
+        )
+
+    def test_every_output_row_sums_to_one(self):
+        r = self.wta.transform(self.predictors, self.dependent)
+        sums = np.sum(r, axis=1)
+
+        np.testing.assert_allclose(sums, 1)
+
+    def test_output_of_repeated_calls_to_transform_equivalent_to_single_call(self):
+        n1 = 4 * self.n_samples // 7
+        r1 = self.wta.transform(self.predictors[:n1], self.dependent[:n1])
+        r2 = self.wta.transform(self.predictors[n1:], self.dependent[n1:])
+
+        wta_again = BioWTARegressor(
+            self.n_models, self.n_features, temperature=self.temperature
+        )
+        r = wta_again.transform(self.predictors, self.dependent)
+
+        np.testing.assert_allclose(r, np.vstack((r1, r2)))
+
+    def test_weight_change_from_repeated_transform_calls_equivalent_to_one_call(self):
+        n1 = 2 * self.n_samples // 7
+        n2 = 3 * self.n_samples // 7
+        self.wta.transform(self.predictors[:n1], self.dependent[:n1])
+        self.wta.transform(self.predictors[n1 : n1 + n2], self.dependent[n1 : n1 + n2])
+        self.wta.transform(self.predictors[n1 + n2 :], self.dependent[n1 + n2 :])
+
+        wta_again = BioWTARegressor(
+            self.n_models, self.n_features, temperature=self.temperature
+        )
+        wta_again.transform(self.predictors, self.dependent)
+
+        np.testing.assert_allclose(self.wta.weights_, wta_again.weights_)
+
+    def test_weight_update_is_correct(self):
+        weights0 = np.copy(self.wta.weights_)
+        r = self.wta.transform(self.predictors[[0]], self.dependent[[0]])
+
+        dw = self.wta.weights_ - weights0
+        eps = np.zeros(self.n_models)
+        for k in range(self.n_models):
+            eps[k] = self.dependent[0] - np.dot(weights0[k], self.predictors[0])
+        dw_exp = self.wta.rate * np.outer(r[0] * eps, self.predictors[0])
+
+        np.testing.assert_allclose(dw, dw_exp)
+
+    def test_log_r_prop_temperature(self):
+        r = self.wta.transform(self.predictors[[0]], self.dependent[[0]])
+
+        temperature_again = 3.2
+        wta_again = BioWTARegressor(
+            self.n_models, self.n_features, temperature=temperature_again
+        )
+        r_again = wta_again.transform(self.predictors[[0]], self.dependent[[0]])
+
+        d_logr = np.log(r[0]) - np.log(r[0, 0])
+        d_logr_again = np.log(r_again[0]) - np.log(r_again[0, 0])
+
+        np.testing.assert_allclose(
+            d_logr_again, d_logr * self.temperature / temperature_again
+        )
+
+    def test_monitor_output_matches_half_error_squared_when_temperature_is_one(self):
+        r, history = self.wta.transform(
+            self.predictors, self.dependent, monitor=["error_"], return_history=True
+        )
+        self.assertTrue(hasattr(history, "error_"))
+
+        log_r = np.log(r)
+        log_r_norm = log_r - log_r[:, 0][:, None]
+
+        log_r_exp = -0.5 * history.error_ ** 2
+        log_r_norm_exp = log_r_exp - log_r_exp[:, 0][:, None]
+        np.testing.assert_allclose(log_r_norm_exp, log_r_norm)
+
+    def test_prediction_is_weighted(self):
+        weights0 = np.copy(self.wta.weights_)
+        r, history = self.wta.transform(
+            self.predictors[[0]], self.dependent[[0]], monitor=["prediction_"]
+        )
+        k = np.argmax(r[0])
+
+        pred = weights0 @ self.predictors[0]
+        self.assertNotAlmostEqual(history.prediction_[0], pred[k])
+        # noinspection PyTypeChecker
+        self.assertAlmostEqual(history.prediction_[0], np.dot(r[0], pred))
+
 
 class TestBioWTARegressorStrAndRepr(unittest.TestCase):
     def setUp(self):
@@ -329,10 +466,15 @@ class TestBioWTARegressorLatentPrior(unittest.TestCase):
         np.testing.assert_allclose(r1, r2)
 
     def test_changing_initial_latent_state_distribution_changes_output(self):
-        start_prob = (lambda v: v / np.sum(v))(self.rng.uniform(size=self.n_models))
+        r1 = self.wta.transform(self.predictors, self.dependent)
+        k = np.argmax(r1[0])
+
+        start_prob = self.rng.uniform(size=self.n_models)
+        start_prob[k] /= 50
+
+        start_prob = start_prob / np.sum(start_prob)
         wta2 = BioWTARegressor(self.n_models, self.n_features, start_prob=start_prob)
 
-        r1 = self.wta.transform(self.predictors, self.dependent)
         r2 = wta2.transform(self.predictors, self.dependent)
 
         self.assertGreater(np.max(np.abs(r1 - r2)), 1e-3)
@@ -389,12 +531,42 @@ class TestBioWTARegressorLatentPrior(unittest.TestCase):
         self.assertNotEqual(k1, k2)
         self.assertEqual(k2, k)
 
+    def test_float_trans_mat(self):
+        r1 = self.wta.transform(self.predictors, self.dependent)
+
+        wta2 = BioWTARegressor(
+            self.n_models, self.n_features, trans_mat=1 / self.n_models
+        )
+        r2 = wta2.transform(self.predictors, self.dependent)
+
+        np.testing.assert_allclose(r1, r2)
+
+
+class TestBioWTARegressorLatentPriorTemperatureOne(unittest.TestCase):
+    def setUp(self):
+        self.n_models = 3
+        self.n_features = 4
+        self.temperature = 1.0
+        self.wta = BioWTARegressor(
+            self.n_models, self.n_features, temperature=self.temperature
+        )
+
+        self.rng = np.random.default_rng(10)
+        self.n_samples = 79
+        self.predictors = self.rng.normal(size=(self.n_samples, self.n_features))
+        self.dependent = self.rng.normal(size=self.n_samples)
+
     def test_initial_r_value_changes_by_correct_amount_according_to_start_prob(self):
         r1 = self.wta.transform(self.predictors[[0]], self.dependent[[0]])
 
         # change initial state distribution
         start_prob = (lambda v: v / np.sum(v))(self.rng.uniform(size=self.n_models))
-        wta2 = BioWTARegressor(self.n_models, self.n_features, start_prob=start_prob)
+        wta2 = BioWTARegressor(
+            self.n_models,
+            self.n_features,
+            temperature=self.temperature,
+            start_prob=start_prob,
+        )
 
         r2 = wta2.transform(self.predictors[[0]], self.dependent[[0]])
 
@@ -411,28 +583,21 @@ class TestBioWTARegressorLatentPrior(unittest.TestCase):
             (lambda v: v / np.sum(v))(self.rng.uniform(size=self.n_models))
             for _ in range(self.n_models)
         ]
-        wta2 = BioWTARegressor(self.n_models, self.n_features, trans_mat=trans_mat)
+        wta2 = BioWTARegressor(
+            self.n_models,
+            self.n_features,
+            temperature=self.temperature,
+            trans_mat=trans_mat,
+        )
 
         r2 = wta2.transform(self.predictors[:2], self.dependent[:2])
         np.testing.assert_allclose(r1[0], r2[0])
 
         diff_log_r = np.log(r2[1]) - np.log(r1[1])
-        k = np.argmax(r2[0])
-        # expected_diff_log_r = r2[0] @ np.log(trans_mat)
-        expected_diff_log_r = np.log(trans_mat)[k]
+        expected_diff_log_r = r2[0] @ np.log(trans_mat)
         np.testing.assert_allclose(
             diff_log_r - diff_log_r[0], expected_diff_log_r - expected_diff_log_r[0]
         )
-
-    def test_float_trans_mat(self):
-        r1 = self.wta.transform(self.predictors, self.dependent)
-
-        wta2 = BioWTARegressor(
-            self.n_models, self.n_features, trans_mat=1 / self.n_models
-        )
-        r2 = wta2.transform(self.predictors, self.dependent)
-
-        np.testing.assert_allclose(r1, r2)
 
 
 class TestBioWTARegressorArbitraryStartProbAndTransMat(unittest.TestCase):
