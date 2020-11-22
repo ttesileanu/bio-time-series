@@ -888,5 +888,100 @@ class TestBioWTARegressorCallableLearningRate(unittest.TestCase):
         np.testing.assert_allclose(wta1.weights_, wta2.weights_)
 
 
+class TestBioWTARegressorTransformErrorTimescale(unittest.TestCase):
+    def setUp(self):
+        self.n_models = 4
+        self.n_features = 3
+
+        self.rng = np.random.default_rng(15)
+        self.n_samples = 125
+        self.predictors = self.rng.normal(size=(self.n_samples, self.n_features))
+        self.dependent = self.rng.normal(size=self.n_samples)
+
+        self.kwargs = {"n_models": self.n_models, "n_features": self.n_features}
+
+    def test_recent_loss_same_as_error_sq_if_timescale_is_one(self):
+        wta = BioWTARegressor(**self.kwargs, error_timescale=1.00)
+        _, history = wta.transform(
+            self.predictors, self.dependent, monitor=["error_", "recent_loss_"]
+        )
+        np.testing.assert_allclose(history.error_ ** 2, history.recent_loss_)
+
+    def test_recent_loss_correct_if_timescale_is_not_zero(self):
+        tau = 3.5
+        wta = BioWTARegressor(**self.kwargs, error_timescale=tau)
+        _, history = wta.transform(
+            self.predictors, self.dependent, monitor=["error_", "recent_loss_"]
+        )
+
+        loss_exp = np.zeros((self.n_samples, self.n_models))
+        crt_loss = np.zeros(self.n_models)
+        for i in range(self.n_samples):
+            crt_loss += (history.error_[i] ** 2 - crt_loss) / tau
+            loss_exp[i] = crt_loss
+
+        np.testing.assert_allclose(history.recent_loss_, loss_exp)
+
+    def test_transform_retval_uses_recent_loss_not_instantaneous_error(self):
+        weights = self.rng.normal(size=(self.n_models, self.n_features))
+
+        x = self.predictors
+        y0 = x[: self.n_samples - 1] @ weights[0]
+        y = np.hstack((y0, x[-1] @ weights[1]))
+
+        wta0 = BioWTARegressor(
+            **self.kwargs, error_timescale=1.0, weights=weights, rate=0
+        )
+        wta1 = BioWTARegressor(
+            **self.kwargs, error_timescale=1000.0, weights=weights, rate=0
+        )
+
+        r0 = wta0.transform(x, y)
+        r1 = wta1.transform(x, y)
+
+        k0 = r0.argmax(axis=1)
+        k1 = r1.argmax(axis=1)
+
+        self.assertEqual(k0[-1], 1)
+        self.assertEqual(k1[-1], 0)
+
+    def test_weight_updates_use_instantaneous_error(self):
+        wta0 = BioWTARegressor(**self.kwargs, error_timescale=1.0)
+        wta1 = BioWTARegressor(**self.kwargs, error_timescale=2.3)
+
+        weights0 = np.copy(wta0.weights_)
+        np.testing.assert_allclose(wta1.weights_, weights0)
+
+        wta0.transform(self.predictors[:1], self.dependent[:1])
+        wta1.transform(self.predictors[:1], self.dependent[:1])
+
+        self.assertGreater(np.max(np.abs(wta0.weights_ - weights0)), 1e-5)
+        np.testing.assert_allclose(wta0.weights_, wta1.weights_)
+
+    def test_output_of_repeated_calls_to_transform_equivalent_to_single_call(self):
+        n1 = 4 * self.n_samples // 7
+        tau = 1.0
+        T = 0.5
+        wta = BioWTARegressor(**self.kwargs, error_timescale=tau, temperature=T)
+        r1 = wta.transform(self.predictors[:n1], self.dependent[:n1])
+        r2 = wta.transform(self.predictors[n1:], self.dependent[n1:])
+
+        wta_again = BioWTARegressor(**self.kwargs, error_timescale=tau, temperature=T)
+        r = wta_again.transform(self.predictors, self.dependent)
+
+        np.testing.assert_allclose(r, np.vstack((r1, r2)))
+
+    def test_default_error_timescale_is_one(self):
+        T = 1.0
+        wta0 = BioWTARegressor(**self.kwargs, error_timescale=1.0, temperature=T)
+        wta1 = BioWTARegressor(**self.kwargs, temperature=T)
+
+        r0 = wta0.transform(self.predictors, self.dependent)
+        r1 = wta1.transform(self.predictors, self.dependent)
+
+        np.testing.assert_allclose(r0, r1)
+        np.testing.assert_allclose(wta0.weights_, wta1.weights_)
+
+
 if __name__ == "__main__":
     unittest.main()

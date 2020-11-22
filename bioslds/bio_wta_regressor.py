@@ -1,5 +1,5 @@
-""" Define a class for implementing a biologically plausible, online, winner-
-take-all algorithm for fitting a mixture of regression models to a dataset.
+""" Define a class for implementing a biologically plausible, online, winner-take-all
+algorithm for fitting a mixture of regression models to a dataset.
 """
 
 import numpy as np
@@ -43,6 +43,10 @@ class BioWTARegressor(object):
     temperature : float
         Parameter controlling the softness of the clustering, with 0 indicating the use
         of an `argmax`, and higher values corresponding to softer `softmax` functions.
+    error_timescale : float
+        Timescale on which to average prediction errors before using for latent-state
+        estimation. If equal to 1, no averaging is performed. The instantaneous errors
+        are always used for weight updates.
     weights_ : array, shape `(n_models, n_features)`
         Regression weights for each of the models.
     start_prob_ : array of float, shape (n_models, )
@@ -57,6 +61,9 @@ class BioWTARegressor(object):
         using the `output_`.
     error_ : float
         Difference between observed and predicted values, one for each model.
+    recent_loss_ : float
+        Squared prediction error for each model, averaged over the given
+        `error_timescale`.
     output_ : array of float, shape (n_models, )
         Last latent state assignment. This corresponds to the last value returned from
         `transform`.
@@ -72,6 +79,7 @@ class BioWTARegressor(object):
         start_prob: Optional[Sequence] = None,
         trans_mat: Optional[Union[float, Sequence]] = None,
         temperature: float = 0,
+        error_timescale: float = 1.0,
     ):
         """ Initialize the regression model.
 
@@ -108,11 +116,16 @@ class BioWTARegressor(object):
             Parameter controlling the softness of the clustering, with 0 indicating the
             use of an `argmax`, and higher values corresponding to softer `softmax`
             functions.
+        error_timescale
+            Timescale on which to average prediction errors before using for
+            latent-state estimation. If equal to 1, no averaging is performed. The
+            instantaneous errors are always used for weight updates.
         """
         self.n_models = n_models
         self.n_features = n_features
         self.n_components = self.n_models
         self.temperature = temperature
+        self.error_timescale = error_timescale
 
         if callable(rate) or not hasattr(rate, "__len__"):
             self.rate = rate
@@ -151,6 +164,7 @@ class BioWTARegressor(object):
             self.trans_mat_ = np.ones((self.n_models, self.n_models)) / self.n_models
 
         self.error_ = np.zeros(self.n_models)
+        self.recent_loss_ = np.zeros(self.n_models)
         self.output_ = np.zeros(self.n_models)
 
         self._t = 0
@@ -289,6 +303,10 @@ class BioWTARegressor(object):
 
             self.error_[:] = crt_eps
 
+            self.recent_loss_[:] += (
+                crt_eps ** 2 - self.recent_loss_
+            ) / self.error_timescale
+
             # find best-fitting model:
             # start with prior on latent states
             if i + self._t == 0:
@@ -296,7 +314,7 @@ class BioWTARegressor(object):
             else:
                 crt_obj = np.dot(self.output_, log_trans_mat)
 
-            crt_obj -= 0.5 * crt_eps ** 2
+            crt_obj -= 0.5 * self.recent_loss_
 
             if self.temperature != 0:
                 crt_obj /= self.temperature
@@ -359,6 +377,7 @@ class BioWTARegressor(object):
             crt_weights = np.zeros((crt_n, self.n_models, self.n_features))
             crt_predictions = np.zeros(crt_n)
             crt_error = np.zeros((crt_n, self.n_models))
+            crt_recent_loss = np.zeros((crt_n, self.n_models))
 
             self.weights_ = _perform_transform(
                 crt_X,
@@ -372,7 +391,10 @@ class BioWTARegressor(object):
                 crt_weights,
                 crt_predictions,
                 self.temperature,
+                self.error_timescale,
                 crt_error,
+                self.recent_loss_,
+                crt_recent_loss,
             )
 
             if pbar is not None:
@@ -384,12 +406,14 @@ class BioWTARegressor(object):
                         prediction_=crt_predictions,
                         output_=crt_r,
                         error_=crt_error,
+                        recent_loss_=crt_recent_loss,
                     )
                 )
 
             crt_last_r = crt_r[-1]
             self.output_[:] = crt_last_r
             self.error_[:] = crt_error[-1]
+            self.recent_loss_[:] = crt_recent_loss[-1]
 
         if pbar is not None:
             pbar.close()
@@ -427,7 +451,10 @@ def _perform_transform(
     weights: np.ndarray,
     predictions: np.ndarray,
     temperature: float,
+    error_timescale: float,
     errors: np.ndarray,
+    crt_recent_loss: np.ndarray,
+    recent_loss: np.ndarray,
 ) -> np.ndarray:
     n = len(y)
     crt_obj = np.zeros(len(log_start_prob))
@@ -435,7 +462,11 @@ def _perform_transform(
         crt_x = X[i]
         crt_pred = np.dot(crt_weights, crt_x)
         crt_eps = y[i] - crt_pred
+
+        crt_recent_loss += (crt_eps ** 2 - crt_recent_loss) / error_timescale
+
         errors[i, :] = crt_eps
+        recent_loss[i, :] = crt_recent_loss
 
         # find best-fitting model:
         # start with prior on latent states
@@ -444,7 +475,7 @@ def _perform_transform(
         else:
             crt_obj = np.dot(last_r, log_trans_mat)
 
-        crt_obj -= 0.5 * crt_eps ** 2
+        crt_obj -= 0.5 * crt_recent_loss
 
         if temperature == 0:
             k = crt_obj.argmax()
