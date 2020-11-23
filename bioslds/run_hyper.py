@@ -43,6 +43,10 @@ def run_hyper_optimize(
     rate_log: bool,
     exp_streak_range: tuple,
     exp_streak_log: bool,
+    temperature_range: tuple,
+    temperature_log: bool,
+    timescale_range: tuple,
+    timescale_log: bool,
     monitor: list,
     monitor_step: int,
     economy: bool,
@@ -53,6 +57,10 @@ def run_hyper_optimize(
         log_scale.append("rate")
     if exp_streak_log:
         log_scale.append("exp_streak")
+    if temperature_log:
+        log_scale.append("temperature")
+    if timescale_log:
+        log_scale.append("timescale")
 
     # choose some common options used for all algorithms when calling hyper_score_ar
     common_hyper_args = (dataset, unordered_accuracy_score)
@@ -69,23 +77,25 @@ def run_hyper_optimize(
     if algo == "biowta":
 
         def fct(**kwargs):
-            res = hyper_score_ar(
+            crt_res = hyper_score_ar(
                 make_bio_wta_with_stable_initial,
                 *common_hyper_args,
                 rate=kwargs["rate"],
                 trans_mat=1 - 1 / kwargs["exp_streak"],
+                temperature=kwargs["temperature"],
+                error_timescale=kwargs["timescale"],
                 **common_hyper_kws,
             )
             if economy:
-                del res[1].regressors
+                del crt_res[1].regressors
                 if len(monitor) == 0:
-                    del res[1].history
-            return res
+                    del crt_res[1].history
+            return crt_res
 
     elif algo == "xcorr":
 
         def fct(**kwargs):
-            res = hyper_score_ar(
+            crt_res = hyper_score_ar(
                 CrosscorrelationRegressor,
                 *common_hyper_args,
                 nsm_rate=kwargs["rate"],
@@ -93,17 +103,22 @@ def run_hyper_optimize(
                 **common_hyper_kws,
             )
             if economy:
-                del res[1].regressors
+                del crt_res[1].regressors
                 if len(monitor) == 0:
-                    del res[1].history
-            return res
+                    del crt_res[1].history
+            return crt_res
 
     else:
         raise ValueError("Unknown algo.")
 
     res = random_maximize(
         fct,
-        {"rate": rate_range, "exp_streak": exp_streak_range},
+        {
+            "rate": rate_range,
+            "exp_streak": exp_streak_range,
+            "temperature": temperature_range,
+            "timescale": timescale_range,
+        },
         n_trials,
         log_scale=log_scale,
         rng=optimizer_seed,
@@ -218,6 +233,32 @@ if __name__ == "__main__":
         help="sample expected streak length in log space",
     )
     parser.add_argument(
+        "--temperature",
+        type=float,
+        nargs=2,
+        default=(0.0, 0.0),
+        help="range for BioWTA temperature",
+    )
+    parser.add_argument(
+        "--temperature-log",
+        action="store_true",
+        default=False,
+        help="sample BioWTA temperature in log space",
+    )
+    parser.add_argument(
+        "--timescale",
+        type=float,
+        nargs=2,
+        default=(1.0, 1.0),
+        help="range for averaging timescale",
+    )
+    parser.add_argument(
+        "--timescale-log",
+        action="store_true",
+        default=False,
+        help="sample averaging timescale in log space",
+    )
+    parser.add_argument(
         "--store-signal-set",
         action="store_true",
         default=False,
@@ -317,6 +358,10 @@ if __name__ == "__main__":
         rate_log=main_args.rate_log,
         exp_streak_range=main_args.exp_streak_range,
         exp_streak_log=main_args.exp_streak_log,
+        temperature_range=main_args.temperature_range,
+        temperature_log=main_args.temperature_log,
+        timescale_range=main_args.timescale_range,
+        timescale_log=main_args.timescale_log,
         monitor=main_args.monitor,
         monitor_step=main_args.monitor_step,
         economy=main_args.economy,
