@@ -2,6 +2,8 @@ import unittest
 
 import numpy as np
 
+from unittest import mock
+
 from bioslds.variance_regressor import VarianceRegressor
 
 
@@ -32,6 +34,54 @@ class TestVarianceRegressorInit(unittest.TestCase):
 
     def test_variance_norm_negative_by_default(self):
         self.assertTrue(self.variance.variance_norm.negative)
+
+
+class TestVarianceRegressorExceptions(unittest.TestCase):
+    def test_raises_if_n_models_does_not_match_weights_size(self):
+        with self.assertRaises(ValueError):
+            VarianceRegressor(n_models=2, weights=np.zeros((3, 4)))
+
+    def test_raises_if_n_features_does_not_match_weights_size(self):
+        with self.assertRaises(ValueError):
+            VarianceRegressor(n_features=2, weights=np.zeros((3, 4)))
+
+
+class TestVarianceRegressorRng(unittest.TestCase):
+    def test_weights_initialized_using_rng_normal(self):
+        n_models = 2
+        n_features = 3
+
+        rng = mock.Mock()
+        weights = np.reshape(np.arange(n_models * n_features), (n_models, n_features))
+        rng.normal = mock.Mock(return_value=weights)
+
+        cepstral = VarianceRegressor(n_models=n_models, n_features=n_features, rng=rng)
+        np.testing.assert_allclose(cepstral.prediction_error.weights_, weights)
+
+    def test_rng_can_be_seed(self):
+        n_models = 2
+        n_features = 3
+        seed = 43
+
+        cepstral1 = VarianceRegressor(
+            n_models=n_models, n_features=n_features, rng=seed
+        )
+        cepstral2 = VarianceRegressor(
+            n_models=n_models, n_features=n_features, rng=np.random.default_rng(seed),
+        )
+        np.testing.assert_allclose(
+            cepstral1.prediction_error.weights_, cepstral2.prediction_error.weights_
+        )
+
+    def test_default_seed_is_zero(self):
+        n_models = 2
+        n_features = 3
+
+        cepstral1 = VarianceRegressor(n_models=n_models, n_features=n_features)
+        cepstral2 = VarianceRegressor(n_models=n_models, n_features=n_features, rng=0)
+        np.testing.assert_allclose(
+            cepstral1.prediction_error.weights_, cepstral2.prediction_error.weights_
+        )
 
 
 class TestVarianceRegressorStrAndRepr(unittest.TestCase):
