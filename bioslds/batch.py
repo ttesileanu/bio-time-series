@@ -143,8 +143,9 @@ def hyper_score_ar(
         if len(crt_monitor) > 0 and monitor_step > 1:
             crt_monitor = AttributeMonitor(monitor, step=monitor_step)
 
-        crt_r, crt_history = transform_ar(regressor, signal.y, monitor=crt_monitor,
-                                          **fit_kws)
+        crt_r, crt_history = transform_ar(
+            regressor, signal.y, monitor=crt_monitor, **fit_kws
+        )
         if store_r:
             crt_history.r = crt_r[::monitor_step]
         history.append(crt_history)
