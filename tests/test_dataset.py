@@ -58,6 +58,10 @@ class TestRandomArmaDatasetOutput(unittest.TestCase):
             self.n_signals, self.n_samples, [(3, 0), (1, 1)]
         )
 
+    def test_output_contains_u_field(self):
+        for crt_sig in self.dataset:
+            self.assertTrue(hasattr(crt_sig, "u"))
+
     def test_output_contains_y_field(self):
         for crt_sig in self.dataset:
             self.assertTrue(hasattr(crt_sig, "y"))
@@ -65,6 +69,10 @@ class TestRandomArmaDatasetOutput(unittest.TestCase):
     def test_output_contains_usage_seq_field(self):
         for crt_sig in self.dataset:
             self.assertTrue(hasattr(crt_sig, "usage_seq"))
+
+    def test_output_contains_armas_field(self):
+        for crt_sig in self.dataset:
+            self.assertTrue(hasattr(crt_sig, "armas"))
 
     def test_y_output_has_correct_n_samples(self):
         for crt_sig in self.dataset:
@@ -90,6 +98,14 @@ class TestRandomArmaDatasetOutput(unittest.TestCase):
         np.testing.assert_equal(crt_sig1.y, crt_sig2.y)
         np.testing.assert_equal(crt_sig1.u, crt_sig2.u)
         np.testing.assert_equal(crt_sig1.usage_seq, crt_sig2.usage_seq)
+
+    def test_signal_armas_matches_armas_sequence(self):
+        for i, crt_sig in enumerate(self.dataset):
+            crt_armas = crt_sig.armas
+            crt_armas_exp = self.dataset.armas[i]
+            self.assertEqual(len(crt_armas), len(crt_armas_exp))
+            for arma1, arma2 in zip(crt_armas, crt_armas_exp):
+                self.assertIs(arma1, arma2)
 
     def test_different_signals_are_different(self):
         crt_sig1 = self.dataset[0]
