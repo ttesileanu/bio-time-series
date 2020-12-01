@@ -256,7 +256,7 @@ if __name__ == "__main__":
         help="sample expected streak length in log space",
     )
     parser.add_argument(
-        "--temperature",
+        "--temperature-range",
         type=float,
         nargs=2,
         default=(0.0, 0.0),
@@ -269,7 +269,7 @@ if __name__ == "__main__":
         help="sample BioWTA temperature in log space",
     )
     parser.add_argument(
-        "--timescale",
+        "--timescale-range",
         type=float,
         nargs=2,
         default=(1.0, 1.0),
@@ -282,11 +282,11 @@ if __name__ == "__main__":
         help="sample averaging timescale in log space",
     )
     parser.add_argument(
-        "--cesptral-order",
+        "--cepstral-order-range",
         type=int,
         nargs=2,
-        default=(3, 3),
-        help="range for cepstral order",
+        default=(3, 4),
+        help="range for cepstral order (lower = inclusive, upper = exclusive)",
     )
     parser.add_argument(
         "--store-signal-set",
@@ -392,7 +392,7 @@ if __name__ == "__main__":
         temperature_log=main_args.temperature_log,
         timescale_range=main_args.timescale_range,
         timescale_log=main_args.timescale_log,
-        cepstral_order=main_args.cepstral_order,
+        cepstral_order_range=main_args.cepstral_order_range,
         monitor=main_args.monitor,
         monitor_step=main_args.monitor_step,
         economy=main_args.economy,
