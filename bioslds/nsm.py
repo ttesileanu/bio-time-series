@@ -165,7 +165,7 @@ class NonRecurrent(object):
             self.scalings = np.ones(self.n_components)
 
         # construct the state variables
-        # initial value of output doesn't matter: gets replaced with every `fit`
+        # initial value of output doesn't matter: gets replaced with every `transform`
         self.output_ = np.zeros(self.n_components)
 
         # use rng to initialize weights, if provided
@@ -205,29 +205,7 @@ class NonRecurrent(object):
         self._mode = "numba"
 
     # noinspection PyUnusedLocal
-    def fit(
-        self,
-        X: Sequence,
-        **kwargs
-    ) -> "NonRecurrent":
-        """ Feed data to the circuit, updating the output and the weights.
-
-        This calls `fit_infer`, passing all keyword arguments, and ignores the output.
-
-        Parameters
-        ----------
-        X
-            Dataset to feed into the circuit. Shape `(n_samples, n_features)`.
-        All other keyword arguments are passed to `fit_infer`.
-
-        Returns `self`.
-        """
-        self.fit_infer(X, **kwargs)
-
-        return self
-
-    # noinspection PyUnusedLocal
-    def fit_infer(
+    def transform(
         self,
         X: Sequence,
         y: None = None,
@@ -295,8 +273,8 @@ class NonRecurrent(object):
             monitor.setup(n)
 
         fct_mapping = {
-            "naive": self._fit_naive,
-            "numba": self._fit_numba,
+            "naive": self._transform_naive,
+            "numba": self._transform_numba,
         }
         fct = fct_mapping[self._mode]
 
@@ -306,7 +284,9 @@ class NonRecurrent(object):
         return res
 
     # noinspection PyUnusedLocal
-    def _fit_naive(self, X: Sequence, progress, monitor, chunk_hint: int) -> np.ndarray:
+    def _transform_naive(
+        self, X: Sequence, progress, monitor, chunk_hint: int
+    ) -> np.ndarray:
         it = X if progress is None else progress(X)
         out_history = np.zeros((len(X), self.n_components))
         for i, x in enumerate(it):
@@ -318,7 +298,7 @@ class NonRecurrent(object):
 
         return out_history
 
-    def _fit_numba(
+    def _transform_numba(
         self,
         X: Sequence,
         progress: Optional[Callable],
@@ -356,7 +336,9 @@ class NonRecurrent(object):
                 output_=out_history[crt_range],
             )
 
-            self._fit_numba_chunk(crt_X, crt_range=crt_range, crt_history=crt_history)
+            self._transform_numba_chunk(
+                crt_X, crt_range=crt_range, crt_history=crt_history
+            )
 
             if pbar is not None:
                 pbar.update(crt_n)
@@ -368,10 +350,10 @@ class NonRecurrent(object):
 
         return out_history
 
-    def _fit_numba_chunk(
+    def _transform_numba_chunk(
         self, X: np.ndarray, crt_range: slice, crt_history: SimpleNamespace
     ):
-        _perform_fit(
+        _perform_transform(
             X,
             self._learning_rate_vector[crt_range],
             self.tau,
@@ -431,10 +413,17 @@ class NonRecurrent(object):
 
     def clone(self):
         """ Make a clone of the current instance. """
-        clone = NonRecurrent(n_features=self.n_features, n_components=self.n_components,
-                             weights=self.weights_, lateral=self.lateral_, tau=self.tau,
-                             rate=self.rate, scalings=self.scalings,
-                             non_negative=self.non_negative, whiten=self.whiten)
+        clone = NonRecurrent(
+            n_features=self.n_features,
+            n_components=self.n_components,
+            weights=self.weights_,
+            lateral=self.lateral_,
+            tau=self.tau,
+            rate=self.rate,
+            scalings=self.scalings,
+            non_negative=self.non_negative,
+            whiten=self.whiten,
+        )
         clone.n_samples_ = self.n_samples_
         clone.output_ = np.copy(self.output_)
         return clone
@@ -474,7 +463,7 @@ class NonRecurrent(object):
 
 
 @njit
-def _perform_fit(
+def _perform_transform(
     x: np.ndarray,
     rate: np.ndarray,
     tau: float,

@@ -19,7 +19,7 @@ class OnlineCrosscorrelation(object):
     ----------
     n_features : int
         Number of components in the multi-dimensional input.
-    n_features : int
+    n_components : int
         Number of components in the output. This is always equal to `n_features`.
     rate : float
         Learning rate for the cross-correlation estimate.

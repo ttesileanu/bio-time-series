@@ -1,5 +1,5 @@
-""" Define a class for implementing a biologically plausible, online, winner-
-take-all algorithm for fitting a mixture of regression models to a dataset.
+""" Define a class for implementing a biologically plausible, online, winner-take-all
+algorithm for fitting a mixture of regression models to a dataset.
 """
 
 import numpy as np
@@ -12,20 +12,23 @@ from numba import njit
 
 
 class BioWTARegressor(object):
-    """ A class implementing a biologically plausible winner-take-all algorithm
-    that performs a multi-modal regression in a streaming setting.
+    """ A class implementing a biologically plausible winner-take-all algorithm that
+    performs a multi-modal regression in a streaming setting.
 
-    Specifically, this learns a set of regressions, with coefficients `w[k, :]`,
-    such that we have
+    Specifically, this learns a set of regressions, with coefficients `w[k, :]`, such
+    that we have
         y[t] = sum_k z[t][k] * np.dot(w[k, :], x[t]) ,
-    where `z[t]` is a one-hot encoding of the model that should be used at time
-    `t` (`z[t][k] == 1` if model `k` is used), `y[t]` is the output, and `x[t]`
-    is the input, or predictor, variable.
+    where `z[t]` is a one-hot encoding of the model that should be used at time `t`
+    (`z[t][k] == 1` if model `k` is used), `y[t]` is the output, and `x[t]` is the
+    input, or predictor, variable.
 
-    This class attempts to fit both the coefficients `w[k, i]` and the state
-    assignments `z[t]`, and do so on-the-fly, as the data is being processed.
-    Moreover, it uses an implementation that has a simple interpretation in
-    terms of a rate-based biologically plausible neural network.
+    This class attempts to fit both the coefficients `w[k, i]` and the state assignments
+    `z[t]`, and do so on-the-fly, as the data is being processed. Moreover, it uses an
+    implementation that has a simple interpretation in terms of a rate-based
+    biologically plausible neural network.
+
+    The winner-take-all approach can be softened by using the `temperature_` parameter
+    below.
 
     Attributes
     ==========
@@ -33,12 +36,19 @@ class BioWTARegressor(object):
         Number of models in mixture.
     n_features : int
         Number of predictor variables (features).
+    n_components : int
+        Number of output dimensions. This is an alias for `n_models`.
     rate : float, np.ndarray, callable
         Learning rate or learning schedule for the regression weights.
+    temperature : float
+        Parameter controlling the softness of the clustering, with 0 indicating the use
+        of an `argmax`, and higher values corresponding to softer `softmax` functions.
+    error_timescale : float
+        Timescale on which to average prediction errors before using for latent-state
+        estimation. If equal to 1, no averaging is performed. The instantaneous errors
+        are always used for weight updates.
     weights_ : array, shape `(n_models, n_features)`
         Regression weights for each of the models.
-    prediction_ : float
-        Value of last best prediction from the model.
     start_prob_ : array of float, shape (n_models, )
         Distribution for the initial latent state. Currently this is fixed and cannot be
         learned.
@@ -46,9 +56,17 @@ class BioWTARegressor(object):
         Transition matrix for the latent state, with `trans_mat[i, j]` being the
         probability of transitioning from latent state (model) `i` to latent state
         (model) `j` at every time step. Currently this is fixed and cannot be learned.
+    prediction_ : float
+        Value of last best prediction from the model. This is weighted across models by
+        using the `output_`.
+    error_ : float
+        Difference between observed and predicted values, one for each model.
+    recent_loss_ : float
+        Squared prediction error for each model, averaged over the given
+        `error_timescale`.
     output_ : array of float, shape (n_models, )
         Last latent state assignment. This corresponds to the last value returned from
-        `fit_infer`.
+        `transform`.
     """
 
     def __init__(
@@ -60,6 +78,8 @@ class BioWTARegressor(object):
         weights: Optional[Sequence] = None,
         start_prob: Optional[Sequence] = None,
         trans_mat: Optional[Union[float, Sequence]] = None,
+        temperature: float = 0,
+        error_timescale: float = 1.0,
     ):
         """ Initialize the regression model.
 
@@ -92,9 +112,20 @@ class BioWTARegressor(object):
             elements are set equal (i.e., uniform probability to transition to each of
             the other states). Currently the transition matrix is fixed and cannot be
             learned.
+        temperature
+            Parameter controlling the softness of the clustering, with 0 indicating the
+            use of an `argmax`, and higher values corresponding to softer `softmax`
+            functions.
+        error_timescale
+            Timescale on which to average prediction errors before using for
+            latent-state estimation. If equal to 1, no averaging is performed. The
+            instantaneous errors are always used for weight updates.
         """
         self.n_models = n_models
         self.n_features = n_features
+        self.n_components = self.n_models
+        self.temperature = temperature
+        self.error_timescale = error_timescale
 
         if callable(rate) or not hasattr(rate, "__len__"):
             self.rate = rate
@@ -132,16 +163,21 @@ class BioWTARegressor(object):
         else:
             self.trans_mat_ = np.ones((self.n_models, self.n_models)) / self.n_models
 
+        self.error_ = np.zeros(self.n_models)
+        self.recent_loss_ = np.zeros(self.n_models)
         self.output_ = np.zeros(self.n_models)
+
+        self._t = 0
 
         self._mode = "numba"
 
-    def fit_infer(
+    def transform(
         self,
         X: Sequence,
         y: Sequence,
         progress: Optional[Callable] = None,
         monitor: Union[None, AttributeMonitor, Sequence] = None,
+        return_history: bool = False,
         chunk_hint: int = 1000,
     ) -> Union[np.ndarray, Tuple[np.ndarray, SimpleNamespace]]:
         """ Feed a set of samples through the model, inferring which model fits best at
@@ -166,23 +202,24 @@ class BioWTARegressor(object):
             This can be an object for monitoring the evolution of the parameters during
             learning (e.g., an instance of `AttributeMonitor`), or a sequence of
             attribute names indicating the parameters to be tracked. If the latter, the
-            function generates an `AttributeMonitor`. In either case, the monitor's
-            `history_` is returned as a second return value. Parameter values are stored
-            and calculated before their updates.
+            function generates an `AttributeMonitor`, and `return_history` is forced to
+            be true so that its `history_` attribute can be accessed. Parameter values
+            are stored before their updates.
+        return_history
+            If true, return the monitor's `history_` namespace as a second return value.
+            If `monitor` is `None`, returns an empty namespace.
         chunk_hint
             A hint about how to chunk the learning. This may or may not be used. If it
             is, the progress function will only be called once per chunk.
 
-        If `monitor` is not provided: returns an array `r` with shape `(n_samples,
-        n_models)` such  that `r[t, k]` shows, roughly, how likely it is that the sample
-        at time `t` was generated by model `k`. Note that this is not a full
-        probabilistic model, so this should not be taken literally.
+        If `return_history` is not false, returns the array `z` with shape `(n_samples,
+        n_models)` of one-hot cluster assignments. Roughly, `z[t, k]` shows how likely
+        it is that the sample at time `t` was generated by model `k`. Note that this is
+        not a full probabilistic model, so this should not be taken literally.
 
-        If a `monitor` is used: returns a tuple `(r, history)` where `r` is the output
-        from above, and `history` is the `history_` attribute of the monitor that was
-        used. When an `AttributeMonitor` is used (which is what happens when `monitor`
-        is a sequence), the `history` output behaves like a `SimpleNamespace`, where
-        each tracked attribute is a member.
+        If `return_history` is true, returns a tuple `(z, history)` where `z` is the
+        output from above, and `history` is the `history_` attribute of the monitor that
+        was used.
         """
         n_samples, n_features = np.shape(X)
         if n_features != self.n_features:
@@ -195,14 +232,18 @@ class BioWTARegressor(object):
         r = np.zeros((n_samples, self.n_models))
 
         fct_mapping = {
-            "naive": self._fit_infer_naive,
-            "numba": self._fit_infer_numba,
+            "naive": self._transform_naive,
+            "numba": self._transform_numba,
         }
         fct = fct_mapping[self._mode]
 
         if monitor is not None:
             if hasattr(monitor, "__len__") and not hasattr(monitor, "setup"):
                 monitor = AttributeMonitor(monitor)
+                # sequence forces return_history
+                return_history = True
+        else:
+            return_history = False
 
         # figure out per-step rates
         n = len(y)
@@ -223,13 +264,15 @@ class BioWTARegressor(object):
             X, y, r, progress=progress, monitor=monitor, chunk_hint=chunk_hint,
         )
 
-        if monitor is None:
+        self._t += n
+
+        if not return_history:
             return r
         else:
             return r, monitor.history_
 
     # noinspection PyUnusedLocal
-    def _fit_infer_naive(
+    def _transform_naive(
         self,
         X: np.ndarray,
         y: np.ndarray,
@@ -249,37 +292,53 @@ class BioWTARegressor(object):
 
         log_trans_mat = _log_safe_zero(self.trans_mat_)
 
-        last_k = None
+        if self._t == 0:
+            last_k = None
+        else:
+            last_k = np.argmax(self.output_)
+
         for i, (crt_x, crt_y) in enumerate(zip(itX, y)):
             crt_pred = np.dot(self.weights_, crt_x)
             crt_eps = crt_y - crt_pred
 
+            self.error_[:] = crt_eps
+
+            self.recent_loss_[:] += (
+                crt_eps ** 2 - self.recent_loss_
+            ) / self.error_timescale
+
             # find best-fitting model:
             # start with prior on latent states
-            if i == 0:
+            if i + self._t == 0:
                 crt_obj = _log_safe_zero(self.start_prob_)
             else:
-                crt_obj = np.copy(log_trans_mat[last_k])
+                crt_obj = np.dot(self.output_, log_trans_mat)
 
-            crt_obj -= 0.5 * crt_eps ** 2
-            max_obj = np.max(crt_obj)
-            r0 = np.exp(crt_obj - max_obj)
-            r[i] = r0 / np.sum(r0)
+            crt_obj -= 0.5 * self.recent_loss_
 
-            k = r0.argmax()
+            if self.temperature != 0:
+                crt_obj /= self.temperature
+                max_obj = np.max(crt_obj)
+                r0 = np.exp(crt_obj - max_obj)
+                r[i] = r0 / np.sum(r0)
 
-            self.prediction_ = crt_pred[k]
+                k = None
+            else:
+                k = crt_obj.argmax()
+                r[i, k] = 1.0
+
+            self.prediction_ = np.dot(r[i], crt_pred)
             self.output_[:] = r[i]
             if monitor is not None:
                 monitor.record(self)
 
             crt_rate = self._rate_vector[i]
-            dw = (crt_rate * crt_eps[k]) * crt_x
-            self.weights_[k] += dw
+            dw = crt_rate * np.outer(r[i] * crt_eps, crt_x)
+            self.weights_ += dw
 
             last_k = k
 
-    def _fit_infer_numba(
+    def _transform_numba(
         self,
         X: np.ndarray,
         y: np.ndarray,
@@ -303,7 +362,10 @@ class BioWTARegressor(object):
         log_start_prob = _log_safe_zero(self.start_prob_)
         log_trans_mat = _log_safe_zero(self.trans_mat_)
 
-        crt_last_r = None
+        if self._t == 0:
+            crt_last_r = None
+        else:
+            crt_last_r = self.output_
         for chunk_start in range(0, len(X), chunk_hint):
             crt_range = slice(chunk_start, chunk_start + chunk_hint)
             crt_X = X[crt_range]
@@ -314,8 +376,10 @@ class BioWTARegressor(object):
 
             crt_weights = np.zeros((crt_n, self.n_models, self.n_features))
             crt_predictions = np.zeros(crt_n)
+            crt_error = np.zeros((crt_n, self.n_models))
+            crt_recent_loss = np.zeros((crt_n, self.n_models))
 
-            self.weights_ = _perform_fit_infer(
+            self.weights_ = _perform_transform(
                 crt_X,
                 crt_y,
                 crt_r,
@@ -326,6 +390,11 @@ class BioWTARegressor(object):
                 log_trans_mat,
                 crt_weights,
                 crt_predictions,
+                self.temperature,
+                self.error_timescale,
+                crt_error,
+                self.recent_loss_,
+                crt_recent_loss,
             )
 
             if pbar is not None:
@@ -333,12 +402,18 @@ class BioWTARegressor(object):
             if monitor is not None:
                 monitor.record_batch(
                     SimpleNamespace(
-                        weights_=crt_weights, prediction_=crt_predictions, output_=crt_r
+                        weights_=crt_weights,
+                        prediction_=crt_predictions,
+                        output_=crt_r,
+                        error_=crt_error,
+                        recent_loss_=crt_recent_loss,
                     )
                 )
 
             crt_last_r = crt_r[-1]
             self.output_[:] = crt_last_r
+            self.error_[:] = crt_error[-1]
+            self.recent_loss_[:] = crt_recent_loss[-1]
 
         if pbar is not None:
             pbar.close()
@@ -364,7 +439,7 @@ class BioWTARegressor(object):
 
 
 @njit
-def _perform_fit_infer(
+def _perform_transform(
     X: np.ndarray,
     y: np.ndarray,
     r: np.ndarray,
@@ -375,40 +450,48 @@ def _perform_fit_infer(
     log_trans_mat: np.ndarray,
     weights: np.ndarray,
     predictions: np.ndarray,
+    temperature: float,
+    error_timescale: float,
+    errors: np.ndarray,
+    crt_recent_loss: np.ndarray,
+    recent_loss: np.ndarray,
 ) -> np.ndarray:
     n = len(y)
-    last_k = 0
     crt_obj = np.zeros(len(log_start_prob))
     for i in range(n):
         crt_x = X[i]
         crt_pred = np.dot(crt_weights, crt_x)
         crt_eps = y[i] - crt_pred
 
+        crt_recent_loss += (crt_eps ** 2 - crt_recent_loss) / error_timescale
+
+        errors[i, :] = crt_eps
+        recent_loss[i, :] = crt_recent_loss
+
         # find best-fitting model:
         # start with prior on latent states
-        if i == 0:
-            if last_r is None:
-                crt_obj[:] = log_start_prob
-            else:
-                last_k = np.argmax(last_r)
-                crt_obj[:] = log_trans_mat[last_k]
+        if i == 0 and last_r is None:
+            crt_obj[:] = log_start_prob
         else:
-            crt_obj[:] = log_trans_mat[last_k]
+            crt_obj = np.dot(last_r, log_trans_mat)
 
-        crt_obj -= 0.5 * crt_eps ** 2
-        max_obj = np.max(crt_obj)
-        r0 = np.exp(crt_obj - max_obj)
-        r[i, :] = r0 / np.sum(r0)
+        crt_obj -= 0.5 * crt_recent_loss
 
-        k = r0.argmax()
+        if temperature == 0:
+            k = crt_obj.argmax()
+            r[i, k] = 1.0
+        else:
+            crt_obj /= temperature
+            max_obj = np.max(crt_obj)
+            r0 = np.exp(crt_obj - max_obj)
+            r[i, :] = r0 / np.sum(r0)
 
-        if weights is not None:
-            weights[i, :, :] = crt_weights
-            predictions[i] = crt_pred[k]
+        weights[i, :, :] = crt_weights
+        predictions[i] = np.dot(r[i], crt_pred)
 
-        crt_weights[k, :] += (rate[i] * crt_eps[k]) * crt_x
+        crt_weights += rate[i] * np.outer(r[i] * crt_eps, crt_x)
 
-        last_k = k
+        last_r = r[i]
 
     return crt_weights
 

@@ -23,7 +23,7 @@ class MockRegressor(object):
         self.rng = rng
 
     # noinspection PyUnusedLocal
-    def fit_infer(
+    def transform(
         self,
         X: Sequence,
         y: Sequence,
@@ -77,7 +77,7 @@ class TestHyperScoreARRegressorCalls(unittest.TestCase):
         self.regressors = []
         for i in range(self.n_signals):
             regressor = Mock(n_features=4)
-            regressor.fit_infer.return_value = (
+            regressor.transform.return_value = (
                 np.zeros((self.n_samples, self.n_models)),
                 SimpleNamespace(),
             )
@@ -88,19 +88,19 @@ class TestHyperScoreARRegressorCalls(unittest.TestCase):
         self.kwargs = {"foo": "bar"}
         self.fit_kws = {"bar": 3}
 
-        with mock.patch("bioslds.batch.fit_infer_ar") as mock_fit_infer_ar:
-            mock_fit_infer_ar.side_effect = [
-                _.fit_infer.return_value for _ in self.regressors
+        with mock.patch("bioslds.batch.transform_ar") as mock_transform_ar:
+            mock_transform_ar.side_effect = [
+                _.transform.return_value for _ in self.regressors
             ]
             hyper_score_ar(
                 self.regressor_class,
                 self.dataset,
                 self.metric,
                 fit_kws=self.fit_kws,
-                **self.kwargs
+                **self.kwargs,
             )
 
-            self.mock_fit_infer_ar = mock_fit_infer_ar
+            self.mock_transform_ar = mock_transform_ar
 
         for call in self.regressor_class.call_args_list:
             for key, value in self.kwargs.items():
@@ -122,19 +122,19 @@ class TestHyperScoreARRegressorCalls(unittest.TestCase):
         for call in self.regressor_class.call_args_list:
             self.assertIn("rng", call[1])
 
-    def test_fit_infer_ar_called_once_for_each_regressor(self):
-        self.assertEqual(self.mock_fit_infer_ar.call_count, self.n_signals)
-        for i, call in enumerate(self.mock_fit_infer_ar.call_args_list):
+    def test_transform_ar_called_once_for_each_regressor(self):
+        self.assertEqual(self.mock_transform_ar.call_count, self.n_signals)
+        for i, call in enumerate(self.mock_transform_ar.call_args_list):
             self.assertIs(call[0][0], self.regressors[i])
 
-    def test_fit_infer_ar_called_once_for_each_signal(self):
-        self.assertEqual(self.mock_fit_infer_ar.call_count, self.n_signals)
-        for i, call in enumerate(self.mock_fit_infer_ar.call_args_list):
+    def test_transform_ar_called_once_for_each_signal(self):
+        self.assertEqual(self.mock_transform_ar.call_count, self.n_signals)
+        for i, call in enumerate(self.mock_transform_ar.call_args_list):
             self.assertIs(call[0][1], self.dataset[i].y)
 
-    def test_fit_kws_are_forwarded_to_fit_infer_ar(self):
-        self.assertTrue(self.mock_fit_infer_ar.called)
-        for call in self.mock_fit_infer_ar.call_args_list:
+    def test_fit_kws_are_forwarded_to_transform_ar(self):
+        self.assertTrue(self.mock_transform_ar.called)
+        for call in self.mock_transform_ar.call_args_list:
             for key, value in self.fit_kws.items():
                 self.assertIn(key, call[1])
                 self.assertEqual(call[1][key], value)
@@ -157,7 +157,7 @@ class TestHyperScoreARMetricCalls(unittest.TestCase):
         self.regressors = []
         for i in range(self.n_signals):
             regressor = Mock(n_features=4)
-            regressor.fit_infer.return_value = (
+            regressor.transform.return_value = (
                 self.rng.uniform(size=(self.n_samples, self.n_models)),
                 SimpleNamespace(),
             )
@@ -180,7 +180,7 @@ class TestHyperScoreARMetricCalls(unittest.TestCase):
     def test_metric_is_called_with_argmaxed_infer_result_as_second_arg(self):
         self.assertEqual(self.metric.call_count, self.n_signals)
         for i, call in enumerate(self.metric.call_args_list):
-            crt_r = self.regressors[i].fit_infer.return_value[0]
+            crt_r = self.regressors[i].transform.return_value[0]
             crt_inferred_usage = crt_r.argmax(axis=1)
             np.testing.assert_equal(call[0][1], crt_inferred_usage)
 
@@ -212,7 +212,7 @@ class TestHyperScoreARRng(unittest.TestCase):
         self, rng: Union[None, int, np.random.RandomState, np.random.Generator]
     ) -> Tuple[Mock, Tuple]:
         regressor = Mock(n_features=4)
-        regressor.fit_infer.return_value = (
+        regressor.transform.return_value = (
             self.rng.uniform(size=(self.n_samples, self.n_models)),
             SimpleNamespace(),
         )
@@ -320,7 +320,7 @@ class TestHyperScoreARTestAmount(unittest.TestCase):
         self.regressors = []
         for i in range(self.n_signals):
             regressor = Mock(n_features=4)
-            regressor.fit_infer.return_value = (
+            regressor.transform.return_value = (
                 self.rng.uniform(size=(self.n_samples, self.n_models)),
                 SimpleNamespace(),
             )
@@ -338,7 +338,7 @@ class TestHyperScoreARTestAmount(unittest.TestCase):
 
         call = self.metric.call_args_list[0]
         usage0 = self.dataset[0].usage_seq
-        r0 = self.regressors[0].fit_infer.return_value[0]
+        r0 = self.regressors[0].transform.return_value[0]
         inferred0 = r0.argmax(axis=1)
 
         n = int(fraction * len(r0))
@@ -357,7 +357,7 @@ class TestHyperScoreARTestAmount(unittest.TestCase):
 
         call = self.metric.call_args_list[1]
         usage1 = self.dataset[1].usage_seq
-        r1 = self.regressors[1].fit_infer.return_value[0]
+        r1 = self.regressors[1].transform.return_value[0]
         inferred1 = r1.argmax(axis=1)
 
         labels_true_exp = usage1[-samples:]
@@ -400,9 +400,9 @@ class TestHyperScoreARProgress(unittest.TestCase):
         )
         mock_progress.assert_called()
 
-    def test_progress_trial_passed_to_fit_infer_ra(self):
+    def test_progress_trial_passed_to_transform_ra(self):
         regressor = Mock(n_features=4)
-        regressor.fit_infer.return_value = (np.zeros((10, 2)), SimpleNamespace())
+        regressor.transform.return_value = (np.zeros((10, 2)), SimpleNamespace())
         regressor_class = Mock(return_value=regressor)
 
         mock_progress = Mock()
@@ -415,8 +415,8 @@ class TestHyperScoreARProgress(unittest.TestCase):
             progress_trial=mock_progress,
         )
 
-        regressor.fit_infer.assert_called()
-        call = regressor.fit_infer.call_args_list[0]
+        regressor.transform.assert_called()
+        call = regressor.transform.call_args_list[0]
         self.assertIn("progress", call[1])
         self.assertIs(call[1]["progress"], mock_progress)
 
@@ -442,7 +442,7 @@ class TestHyperScoreARMonitor(unittest.TestCase):
         self.regressors = []
         for i in range(self.n_signals):
             regressor = Mock(n_features=4)
-            regressor.fit_infer.return_value = (
+            regressor.transform.return_value = (
                 self.r[i],
                 SimpleNamespace(**self.history_out[i]),
             )
@@ -451,12 +451,12 @@ class TestHyperScoreARMonitor(unittest.TestCase):
         self.regressor_class = Mock(side_effect=self.regressors)
         self.metric = lambda x, y: 1.0
 
-    def test_monitor_sequence_passed_to_fit_infer_when_step_is_default(self):
+    def test_monitor_sequence_passed_to_transform_when_step_is_default(self):
         monitor = ["a", "b"]
         hyper_score_ar(self.regressor_class, self.dataset, self.metric, monitor=monitor)
 
-        self.regressors[0].fit_infer.assert_called()
-        call = self.regressors[0].fit_infer.call_args_list[0]
+        self.regressors[0].transform.assert_called()
+        call = self.regressors[0].transform.call_args_list[0]
         self.assertIn("monitor", call[1])
         self.assertEqual(call[1]["monitor"], monitor)
 
@@ -482,12 +482,12 @@ class TestHyperScoreARMonitor(unittest.TestCase):
             self.assertIn("step", call[1])
             self.assertEqual(call[1]["step"], step)
 
-    def test_fit_infer_details_has_history_for_each_signal(self):
+    def test_transform_details_has_history_for_each_signal(self):
         _, details = hyper_score_ar(self.regressor_class, self.dataset, self.metric)
         self.assertTrue(hasattr(details, "history"))
         self.assertEqual(len(details.history), self.n_signals)
 
-    def test_fit_infer_second_output_is_returned_in_details_history(self):
+    def test_transform_second_output_is_returned_in_details_history(self):
         _, details = hyper_score_ar(self.regressor_class, self.dataset, self.metric)
         for i, history in enumerate(details.history):
             for key, value in self.history_out[i].items():
@@ -533,7 +533,7 @@ class TestHyperScoreARRegressorDetails(unittest.TestCase):
 
         self.regressors = [Mock(n_features=4) for _ in range(self.n_signals)]
         for regressor in self.regressors:
-            regressor.fit_infer.return_value = (
+            regressor.transform.return_value = (
                 self.rng.uniform(size=(self.n_samples, self.n_models)),
                 SimpleNamespace(),
             )
@@ -547,6 +547,50 @@ class TestHyperScoreARRegressorDetails(unittest.TestCase):
     def test_returned_regressors_are_correct(self):
         for regressor, regressor_exp in zip(self.res[1].regressors, self.regressors):
             self.assertIs(regressor, regressor_exp)
+
+
+class TestHyperScoreARInitialWeightsOracleAR(unittest.TestCase):
+    def setUp(self):
+        self.rng = np.random.default_rng(0)
+        self.n_signals = 5
+        self.n_samples = 34
+        self.n_models = 4
+
+        self.ar_order = 3
+        self.models = self.rng.normal(
+            size=(self.n_signals, self.n_models, self.ar_order)
+        )
+
+        self.dataset = [
+            SimpleNamespace(
+                y=self.rng.normal(size=self.n_samples),
+                usage_seq=self.rng.integers(0, self.n_models, size=self.n_samples),
+                armas=[SimpleNamespace(a=model) for model in sig_models],
+            )
+            for sig_models in self.models
+        ]
+
+        self.regressor_class = Mock(
+            side_effect=lambda *args, **kwargs: Mock(
+                n_features=self.ar_order,
+                transform=Mock(
+                    return_value=(
+                        self.rng.uniform(size=(self.n_samples, self.n_models)),
+                        SimpleNamespace(),
+                    ),
+                ),
+                **kwargs,
+            )
+        )
+
+        self.metric = lambda x, y: 1.0
+        self.res = hyper_score_ar(
+            self.regressor_class, self.dataset, self.metric, initial_weights="oracle_ar"
+        )
+
+    def test_regressors_inited_with_appropriate_weights(self):
+        for i, regressor in enumerate(self.res[1].regressors):
+            np.testing.assert_allclose(regressor.weights, self.models[i])
 
 
 if __name__ == "__main__":

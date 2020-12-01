@@ -24,15 +24,24 @@ class SwitchingSignal:
         The source signal.
     usage_seq : np.ndarray
         A vector of integers indicating which model was used at each time step.
+    armas : list
+        List of `Arma` processes that were used to generate the signal. The values in
+        `usage_seq` are indices in this list.
     """
 
-    def __init__(self, y: np.ndarray, u: np.ndarray, usage_seq: np.ndarray):
+    def __init__(
+        self, y: np.ndarray, u: np.ndarray, usage_seq: np.ndarray, armas: list
+    ):
         self.y = y
         self.u = u
         self.usage_seq = usage_seq
+        self.armas = armas
 
     def __repr__(self) -> str:
-        return f"SwitchingSignal(y={self.y}, u={self.u}, usage_seq={self.usage_seq})"
+        return (
+            f"SwitchingSignal(y={self.y}, u={self.u}, usage_seq={self.usage_seq}, "
+            f"armas={self.armas})"
+        )
 
 
 class RandomArmaDataset(Sequence[SwitchingSignal]):
@@ -230,7 +239,8 @@ class RandomArmaDataset(Sequence[SwitchingSignal]):
         # create an ArmaHSMM instance
         seed = self.signal_seeds[idx]
         rng = np.random.default_rng(seed)
-        arma_hsmm = ArmaHSMM(self.armas[idx], rng=rng, **self.arma_hsmm_kws)
+        crt_armas = self.armas[idx]
+        arma_hsmm = ArmaHSMM(crt_armas, rng=rng, **self.arma_hsmm_kws)
 
         if self.source is not None:
             source = copy.deepcopy(self.source)
@@ -240,10 +250,14 @@ class RandomArmaDataset(Sequence[SwitchingSignal]):
             source = sources.GaussianNoise(rng=source_rng)
 
         y, u, usage_seq = arma_hsmm.transform(
-            self.n_samples, U=source, initial_conditions=self.initial_conditions
+            self.n_samples,
+            X=source,
+            initial_conditions=self.initial_conditions,
+            return_input=True,
+            return_usage_seq=True,
         )
 
-        return SwitchingSignal(y, u, usage_seq)
+        return SwitchingSignal(y, u, usage_seq, list(crt_armas))
 
     def __str__(self) -> str:
         s = f"RandomArmaDataset(n_signals={self.n_signals}, n_samples={self.n_samples})"

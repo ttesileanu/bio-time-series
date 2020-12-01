@@ -78,7 +78,7 @@ class TestNonRecurrentSpecialCases(unittest.TestCase):
 
         for k in range(n_steps):
             x = generate_random_from_kernel(w0, 1, rng).ravel()
-            circuit.fit([x])
+            circuit.transform([x])
             np.testing.assert_allclose(circuit.output_, 0, atol=1e-10)
 
     def test_weights_just_decaying_if_input_is_in_ker_weights(self):
@@ -97,7 +97,7 @@ class TestNonRecurrentSpecialCases(unittest.TestCase):
 
         for k in range(n_steps):
             x = generate_random_from_kernel(w0, 1, rng).ravel()
-            circuit.fit([x])
+            circuit.transform([x])
             np.testing.assert_allclose(circuit.weights_, (gamma_w ** (k + 1)) * w0)
 
     def test_lateral_just_decaying_if_input_is_in_ker_weights(self):
@@ -119,7 +119,7 @@ class TestNonRecurrentSpecialCases(unittest.TestCase):
 
         for k in range(n_steps):
             x = generate_random_from_kernel(w0, 1, rng).ravel()
-            circuit.fit([x])
+            circuit.transform([x])
             np.testing.assert_allclose(circuit.lateral_, (gamma_m ** (k + 1)) * m0)
 
 
@@ -169,7 +169,7 @@ class TestNonRecurrentFit(unittest.TestCase):
 
     def test_n_samples_is_advanced_by_fit(self):
         n_samples = 3
-        self.circuit.fit(n_samples * [[1, 2, 3, 1, 2]])
+        self.circuit.transform(n_samples * [[1, 2, 3, 1, 2]])
         self.assertEqual(n_samples, self.circuit.n_samples_)
 
     def test_output_after_fit_single_sample(self):
@@ -185,7 +185,7 @@ class TestNonRecurrentFit(unittest.TestCase):
                 - np.linalg.inv(m_diag) @ (self.circuit.lateral_ - m_diag)
             ) @ y_tilde
 
-            self.circuit.fit([x])
+            self.circuit.transform([x])
 
             np.testing.assert_allclose(self.circuit.output_, expected_y)
 
@@ -197,7 +197,7 @@ class TestNonRecurrentFit(unittest.TestCase):
 
             old_w = np.array(self.circuit.weights_)
 
-            self.circuit.fit([x])
+            self.circuit.transform([x])
 
             expected_w = old_w + self.alpha * (
                 np.outer(self.circuit.output_, x) - old_w
@@ -214,7 +214,7 @@ class TestNonRecurrentFit(unittest.TestCase):
 
             old_m = np.array(self.circuit.lateral_)
 
-            self.circuit.fit([x])
+            self.circuit.transform([x])
 
             expected_m = old_m + (self.alpha / self.tau) * (
                 np.outer(self.circuit.output_, self.circuit.output_) - old_m
@@ -231,7 +231,7 @@ class TestNonRecurrentFit(unittest.TestCase):
 
             old_m = np.array(self.circuit.lateral_)
 
-            self.circuit.fit([x])
+            self.circuit.transform([x])
 
             expected_m = old_m + (self.alpha / self.tau) * (
                 np.outer(self.circuit.output_, self.circuit.output_)
@@ -268,7 +268,7 @@ class TestNonRecurrentFitWithPCScaling(unittest.TestCase):
 
             old_m = np.array(self.circuit.lateral_)
 
-            self.circuit.fit([x])
+            self.circuit.transform([x])
 
             expected_m = old_m + (self.alpha / self.tau) * (
                 np.outer(self.circuit.output_, self.circuit.output_) - lbd @ old_m @ lbd
@@ -286,7 +286,7 @@ class TestNonRecurrentFitWithPCScaling(unittest.TestCase):
 
             old_m = np.array(self.circuit.lateral_)
 
-            self.circuit.fit([x])
+            self.circuit.transform([x])
 
             expected_m = old_m + (self.alpha / self.tau) * (
                 np.outer(self.circuit.output_, self.circuit.output_) - lbd @ lbd
@@ -316,7 +316,7 @@ class TestNonRecurrentFitNonnegative(unittest.TestCase):
         for k in range(n_steps):
             x = self.rng.normal(size=self.input_dim)
 
-            self.circuit.fit([x])
+            self.circuit.transform([x])
             self.assertGreaterEqual(np.min(self.circuit.output_), 0)
 
     def test_constraint_implemented_before_weights_evolution(self):
@@ -326,7 +326,7 @@ class TestNonRecurrentFitNonnegative(unittest.TestCase):
 
             old_w = np.array(self.circuit.weights_)
 
-            self.circuit.fit([x])
+            self.circuit.transform([x])
 
             expected_w = old_w + self.alpha * (
                 np.outer(self.circuit.output_, x) - old_w
@@ -371,7 +371,7 @@ class TestNonRecurrentFitNonnegativeWithPCScalings(unittest.TestCase):
 
             old_m = np.array(self.circuit.lateral_)
 
-            self.circuit.fit([x])
+            self.circuit.transform([x])
 
             expected_m = old_m + (self.alpha / self.tau) * (
                 np.outer(self.circuit.output_, self.circuit.output_) - lbd @ old_m @ lbd
@@ -379,7 +379,7 @@ class TestNonRecurrentFitNonnegativeWithPCScalings(unittest.TestCase):
             np.testing.assert_allclose(self.circuit.lateral_, expected_m)
 
 
-class TestNonRecurrentFitInfer(unittest.TestCase):
+class TestNonRecurrentTransform(unittest.TestCase):
     def setUp(self):
         self.rng = np.random.default_rng(3)
 
@@ -408,7 +408,7 @@ class TestNonRecurrentFitInfer(unittest.TestCase):
 
     def test_fit_infer_returns_same_as_monitor_output(self):
         monitor = AttributeMonitor(["output_"])
-        res = self.circuit.fit_infer(self.x, monitor=monitor)
+        res = self.circuit.transform(self.x, monitor=monitor)
 
         np.testing.assert_allclose(res, monitor.history_.output_)
 
@@ -448,7 +448,7 @@ class TestNonRecurrentClone(unittest.TestCase):
         self.assertEqual(circuit_copy.whiten, self.circuit.whiten)
 
     def test_clone_copies_last_output(self):
-        self.circuit.fit(self.rng.normal(size=(1, self.input_dim)))
+        self.circuit.transform(self.rng.normal(size=(1, self.input_dim)))
         circuit_copy = self.circuit.clone()
         np.testing.assert_allclose(self.circuit.output_, circuit_copy.output_)
 
@@ -509,7 +509,7 @@ class TestNonRecurrentMonitoring(unittest.TestCase):
     def test_progress_called_in_fit(self):
         mock_progress = mock.MagicMock()
 
-        self.circuit.fit(np.zeros((30, self.n_features)), progress=mock_progress)
+        self.circuit.transform(np.zeros((30, self.n_features)), progress=mock_progress)
 
         mock_progress.assert_called()
 
@@ -522,7 +522,7 @@ class TestNonRecurrentMonitoring(unittest.TestCase):
         rng = np.random.default_rng(1)
         x = rng.normal(size=(n_samples, self.n_features))
 
-        self.circuit.fit(x, monitor=monitor)
+        self.circuit.transform(x, monitor=monitor)
 
         circuit1 = NonRecurrent(rng=self.seed, **self.kwargs)
         weights = []
@@ -533,7 +533,7 @@ class TestNonRecurrentMonitoring(unittest.TestCase):
             lateral.append(np.copy(circuit1.lateral_))
             output.append(np.copy(circuit1.output_))
 
-            circuit1.fit([crt_x])
+            circuit1.transform([crt_x])
 
         np.testing.assert_allclose(monitor.history_.weights_, weights)
         np.testing.assert_allclose(monitor.history_.lateral_, lateral)
@@ -548,11 +548,11 @@ class TestNonRecurrentMonitoring(unittest.TestCase):
         rng = np.random.default_rng(1)
         x = rng.normal(size=(n_samples, self.n_features))
 
-        self.circuit.fit(x, monitor=monitor, chunk_hint=13)
+        self.circuit.transform(x, monitor=monitor, chunk_hint=13)
 
         circuit_alt = NonRecurrent(rng=self.seed, **self.kwargs)
         monitor_alt = AttributeMonitor(names)
-        circuit_alt.fit(x, monitor=monitor_alt, chunk_hint=2)
+        circuit_alt.transform(x, monitor=monitor_alt, chunk_hint=2)
 
         np.testing.assert_allclose(
             monitor.history_.weights_, monitor_alt.history_.weights_
@@ -626,12 +626,13 @@ class TestNonRecurrentVectorLearningRate(unittest.TestCase):
 
         self.monitor_full = AttributeMonitor(["output_"])
         self.circuit_full = NonRecurrent(rate=self.rate, **self.kwargs)
-        self.circuit_full.fit(self.x, monitor=self.monitor_full)
+        self.circuit_full.transform(self.x, monitor=self.monitor_full)
 
         self.n_partial = self.n_samples // 2
         self.monitor_partial = AttributeMonitor(["output_"])
         self.circuit_partial = NonRecurrent(rate=self.rate, **self.kwargs)
-        self.circuit_partial.fit(self.x[: self.n_partial], monitor=self.monitor_partial)
+        self.circuit_partial.transform(self.x[: self.n_partial],
+                                       monitor=self.monitor_partial)
 
     def test_final_weights_different_in_partial_and_full_run(self):
         self.assertGreater(
@@ -648,7 +649,7 @@ class TestNonRecurrentVectorLearningRate(unittest.TestCase):
         schedule[: self.n_partial] = self.rate
         circuit = NonRecurrent(rate=schedule, **self.kwargs)
 
-        circuit.fit(self.x)
+        circuit.transform(self.x)
 
         np.testing.assert_allclose(circuit.weights_, self.circuit_partial.weights_)
 
@@ -658,7 +659,7 @@ class TestNonRecurrentVectorLearningRate(unittest.TestCase):
         circuit = NonRecurrent(rate=schedule, **self.kwargs)
 
         monitor = AttributeMonitor(["output_"])
-        circuit.fit(self.x, monitor=monitor)
+        circuit.transform(self.x, monitor=monitor)
         np.testing.assert_allclose(
             monitor.history_.output_[: self.n_partial],
             self.monitor_partial.history_.output_,
@@ -669,7 +670,7 @@ class TestNonRecurrentVectorLearningRate(unittest.TestCase):
         circuit = NonRecurrent(rate=schedule, **self.kwargs)
 
         schedule[:] = 0
-        circuit.fit(self.x)
+        circuit.transform(self.x)
 
         np.testing.assert_allclose(circuit.weights_, self.circuit_full.weights_)
 
@@ -699,8 +700,8 @@ class TestNonRecurrentVectorLearningRateOther(unittest.TestCase):
         circuit1 = NonRecurrent(rate=schedule_short, **self.kwargs)
         circuit2 = NonRecurrent(rate=schedule, **self.kwargs)
 
-        circuit1.fit(self.x)
-        circuit2.fit(self.x)
+        circuit1.transform(self.x)
+        circuit2.transform(self.x)
 
         np.testing.assert_allclose(circuit1.weights_, circuit2.weights_)
 
@@ -710,10 +711,10 @@ class TestNonRecurrentVectorLearningRateOther(unittest.TestCase):
         circuit1 = NonRecurrent(rate=schedule, **self.kwargs)
         circuit2 = NonRecurrent(rate=schedule, **self.kwargs)
 
-        circuit1.fit(self.x)
+        circuit1.transform(self.x)
 
-        circuit2.fit(self.x[: self.n_samples // 2])
-        circuit2.fit(self.x[self.n_samples // 2 :])
+        circuit2.transform(self.x[: self.n_samples // 2])
+        circuit2.transform(self.x[self.n_samples // 2:])
 
         np.testing.assert_allclose(circuit1.weights_, circuit2.weights_)
 
@@ -733,11 +734,11 @@ class TestNonRecurrentCallableLearningRate(unittest.TestCase):
             return 1 / (100 + 5 * i)
 
         circuit1 = NonRecurrent(rate=rate_fct, **kwargs)
-        circuit1.fit(x)
+        circuit1.transform(x)
 
         schedule = [rate_fct(_) for _ in range(n_samples)]
         circuit2 = NonRecurrent(rate=schedule, **kwargs)
-        circuit2.fit(x)
+        circuit2.transform(x)
 
         np.testing.assert_allclose(circuit1.weights_, circuit2.weights_)
         np.testing.assert_allclose(circuit1.lateral_, circuit2.lateral_)
@@ -758,11 +759,11 @@ class TestNonRecurrentCallableLearningRate(unittest.TestCase):
             return rate
 
         circuit1 = NonRecurrent(rate=rate_fct, **kwargs)
-        circuit1.fit(x)
+        circuit1.transform(x)
 
         schedule = [rate_fct(_) for _ in range(n_samples)]
         circuit2 = NonRecurrent(rate=schedule, **kwargs)
-        circuit2.fit(x)
+        circuit2.transform(x)
 
         np.testing.assert_allclose(circuit1.weights_, circuit2.weights_)
         np.testing.assert_allclose(circuit1.lateral_, circuit2.lateral_)
@@ -783,10 +784,10 @@ class TestNonRecurrentCallableLearningRate(unittest.TestCase):
         circuit1 = NonRecurrent(rate=rate_fct, **kwargs)
         circuit2 = NonRecurrent(rate=rate_fct, **kwargs)
 
-        circuit1.fit(x)
+        circuit1.transform(x)
 
-        circuit2.fit(x[: n_samples // 2])
-        circuit2.fit(x[n_samples // 2 :])
+        circuit2.transform(x[: n_samples // 2])
+        circuit2.transform(x[n_samples // 2:])
 
         np.testing.assert_allclose(circuit1.weights_, circuit2.weights_)
 
@@ -806,10 +807,10 @@ class TestNonRecurrentChunkHintDoesNotAffectResult(unittest.TestCase):
 
     def test_small_chunk_same_as_no_chunk(self):
         circuit1 = NonRecurrent(**self.kwargs)
-        circuit1.fit(self.x)
+        circuit1.transform(self.x)
 
         circuit2 = NonRecurrent(**self.kwargs)
-        circuit2.fit(self.x, chunk_hint=12)
+        circuit2.transform(self.x, chunk_hint=12)
 
         np.testing.assert_allclose(circuit1.weights_, circuit2.weights_)
         np.testing.assert_allclose(circuit1.lateral_, circuit2.lateral_)

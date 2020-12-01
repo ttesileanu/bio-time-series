@@ -3,26 +3,33 @@
 import numpy as np
 import copy
 
+from bioslds.monitor import AttributeMonitor
+
 from numba import njit
 from typing import Sequence, Tuple, Callable, Optional, Union
+from types import SimpleNamespace
 
 
 class Arma(object):
     """ Transform input into output samples using autoregressive moving-average
     (ARMA) processes.
 
-    Given an input signal `u[t]`, the output `y[t]` of an ARMA process is
+    Given an input signal `x[t]`, the output `y[t]` of an ARMA process is
     described by
 
         y[t] = bias + a[0]*y[t-1] + a[1]*y[t-2] + ... + a[p-1]*y[t-p] +
-                      u[t] + b[0]*u[t-1] + ... + b[q-1]*u[t-q] ,
+                      x[t] + b[0]*x[t-1] + ... + b[q-1]*x[t-q] ,
 
     where `a[i]`, `b[i]` are the coefficients of the process. This class
-    focuses on scalar processes, where `y[t]`, `u[t]`, `a[i]`, and `b[i]` are
+    focuses on scalar processes, where `y[t]`, `x[t]`, `a[i]`, and `b[i]` are
     all scalars.
 
     Attributes
     ==========
+    n_features : int
+        Number of input dimensions. This is always equal to 1.
+    n_components : int
+        Number of output dimensions. This is always equal to 1.
     a : array of float
         AR parameters. This shouldn't be changed after `__init__`.
     b : array of float
@@ -40,11 +47,15 @@ class Arma(object):
         needs to be called with an input sequence.
     source_scaling : float
         Amount by which the source data is scaled before using.
+    input_ : float
+        Last value of input (source) signal.
+    output_ : float
+        Last value of output signal.
     history_ : tuple of arrays
-        A tuple, `(history_y, history_u)`, of recent samples of the output and
+        A tuple, `(history_y, history_)`, of recent samples of the output and
         input sequences. The number of samples kept depends on the order: `p`
         samples are kept in `history_y`, and `q` samples are kept in
-        `history_u`.
+        `history_x`.
     """
 
     def __init__(
@@ -72,12 +83,15 @@ class Arma(object):
             array of that length. If `default_source` is not provided, the
             `transform` method needs to be called with an input sequence.
         initial_conditions
-            A tuple, `(initial_y, initial_u)`, of recent samples of the output
+            A tuple, `(initial_y, initial_x)`, of recent samples of the output
             and input sequences used to seed the simulation. If these are not
             provided, they are assumed equal to zero.
         source_scaling
             Amount by which the source data is scaled before using.
         """
+        self.n_features = 1
+        self.n_components = 1
+
         # making sure to make copies
         self.a = np.array(a)
         self.b = np.array(b)
@@ -95,18 +109,33 @@ class Arma(object):
                 np.copy(initial_conditions[0]),
                 np.copy(initial_conditions[1]),
             )
+            if len(self.history_[0]) > 0:
+                self.output_ = self.history_[0][-1]
+            else:
+                self.output_ = 0
+
+            if len(self.history_[1]) > 0:
+                self.input_ = self.history_[1][-1]
+            else:
+                self.input_ = 0
         else:
             self.history_ = (np.zeros(self.p), np.zeros(self.q))
+            self.input_ = 0
+            self.output_ = 0
 
         # _mode allows us to choose legacy implementations
         # useful for testing
         self._mode = "ma_conv_ar_numba"
 
+    # noinspection PyUnusedLocal
     def transform(
         self,
         n_samples: Optional[int] = None,
-        U: Union[None, Sequence, Callable] = None,
-    ) -> Tuple[np.ndarray, np.ndarray]:
+        X: Union[None, Sequence, Callable] = None,
+        monitor: Optional[AttributeMonitor] = None,
+        return_input: bool = False,
+        chunk_hint: int = 10000,
+    ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
         """ Process or generate input samples.
 
         The function uses exactly `n_samples` input samples.
@@ -123,43 +152,64 @@ class Arma(object):
         Parameters
         ----------
         n_samples
-            Number of samples to generate. If not provided, `U` must be provided
+            Number of samples to generate. If not provided, `X` must be provided
             and it must be a sequence.
-        U
+        X
             Input samples or input generator. If not provided,
             `self.default_source` is used to generate the sample (and if the
-            latter wasn't provided, an exception is raised). If `U` is given and
-            is a sequence, it must be that `len(U) == n_samples`. If `U` is a
+            latter wasn't provided, an exception is raised). If `X` is given and
+            is a sequence, it must be that `len(X) == n_samples`. If `X` is a
             callable, it must take a keyword argument `size` in the form of a
             tuple `(n_samples, n_features)`.
+        return_input
+            If true, returns both output and input. If false (the default), returns only
+            the output.
+        monitor
+            An object for monitoring the evolution of the parameters during learning
+            (e.g., an instance of `AttributeMonitor`). Parameter values are stored and
+            calculated before their updates.
+        chunk_hint
+            A hint about how to split the data into chunks. This is currently unused.
 
-        Returns a tuple `(Y, U)` of generated `y` and `u` samples. If the `U`
-        parameter was used and was a sequence, the output `U` simply mirrors the
+        By default, returns an array of generated `y` samples. If `return_input` is
+        true, returns a tuple `(Y, X)` of generated `y` and `x` samples. If the `X`
+        parameter was used and was a sequence, the output `X` simply mirrors the
         input.
         """
-        if U is None:
+        if X is None:
             if n_samples is None:
-                raise ValueError("Need either U or n_samples.")
+                raise ValueError("Need either X or n_samples.")
             if n_samples == 0:
-                return np.array([]), np.array([])
+                if monitor is not None:
+                    monitor.setup(0)
+
+                if return_input:
+                    return np.array([]), np.array([])
+                else:
+                    return np.array([])
             if self.default_source is None:
-                raise ValueError("Need default_source if there's no U.")
+                raise ValueError("Need default_source if there's no X.")
 
-            U = self.default_source
+            X = self.default_source
 
-        if callable(U):
+        if callable(X):
             if n_samples is None:
                 raise ValueError("If source is callable n_samples is needed.")
-            U = U(size=n_samples)
+            X = X(size=n_samples)
 
         # output vectors including pre-history
-        n = len(U)
+        n = len(X)
+        if monitor is not None:
+            monitor.setup(n)
         if n == 0:
-            return np.array([]), np.array([])
+            if return_input:
+                return np.array([]), np.array([])
+            else:
+                return np.array([])
 
-        u_out_full = np.zeros(n + self.q)
-        u_out_full[: self.q] = self.history_[1]
-        u_out_full[self.q :] = U
+        x_out_full = np.zeros(n + self.q)
+        x_out_full[: self.q] = self.history_[1]
+        x_out_full[self.q :] = X
 
         y_out_full = np.zeros(n + self.p)
         y_out_full[: self.p] = self.history_[0]
@@ -172,19 +222,31 @@ class Arma(object):
         }
         transform_fct = transform_dict[self._mode]
         # noinspection PyArgumentList
-        transform_fct(y_out_full, u_out_full)
+        transform_fct(y_out_full, x_out_full, monitor=monitor)
 
         # update history
         if self.p > 0:
             self.history_[0][:] = y_out_full[-self.p :]
         if self.q > 0:
-            self.history_[1][:] = u_out_full[-self.q :]
+            self.history_[1][:] = x_out_full[-self.q :]
 
         y_out = y_out_full[self.p :]
-        u_out = u_out_full[self.q :]
-        return y_out, u_out
+        x_out = x_out_full[self.q :]
 
-    def _transform_naive(self, y_out_full: np.ndarray, u_out_full: np.ndarray):
+        self.input_ = x_out[-1]
+        self.output_ = y_out[-1]
+
+        if return_input:
+            return y_out, x_out
+        else:
+            return y_out
+
+    def _transform_naive(
+        self,
+        y_out_full: np.ndarray,
+        x_out_full: np.ndarray,
+        monitor: Optional[AttributeMonitor],
+    ):
         """ Perform the transformation using a naive, slow algorithm. """
         n = len(y_out_full) - self.p
         a_flip = np.flip(self.a)
@@ -192,30 +254,46 @@ class Arma(object):
 
         for i in range(n):
             ar_part = np.dot(a_flip, y_out_full[i : i + self.p])
-            ma_part = np.dot(b_flip_big, u_out_full[i : i + self.q + 1])
+            ma_part = np.dot(b_flip_big, x_out_full[i : i + self.q + 1])
             y_out_full[i + self.p] = ar_part + ma_part + self.bias
 
+            self.input_ = x_out_full[i + self.q]
+            self.output_ = y_out_full[i + self.p]
+            if monitor is not None:
+                monitor.record(self)
+
     def _transform_ma_conv(
-        self, y_out_full: np.ndarray, u_out_full: np.ndarray
+        self,
+        y_out_full: np.ndarray,
+        x_out_full: np.ndarray,
+        monitor: Optional[AttributeMonitor],
     ):
         """ Perform the transformation using `np.convolve` for the MA part. """
         n = len(y_out_full) - self.p
         a_flip = np.flip(self.a)
 
         b_ext = self.source_scaling * np.hstack(([1], self.b))
-        u = np.convolve(u_out_full, b_ext, mode="valid")
+        u = np.convolve(x_out_full, b_ext, mode="valid")
 
         for i in range(n):
             ar_part = np.dot(a_flip, y_out_full[i : i + self.p])
             y_out_full[i + self.p] = ar_part + u[i] + self.bias
 
+            self.input_ = x_out_full[i + self.q]
+            self.output_ = y_out_full[i + self.p]
+            if monitor is not None:
+                monitor.record(self)
+
     def _transform_ma_conv_ar_numba(
-        self, y_out_full: np.ndarray, u_out_full: np.ndarray
+        self,
+        y_out_full: np.ndarray,
+        x_out_full: np.ndarray,
+        monitor: Optional[AttributeMonitor],
     ):
         """ Perform the transformation using `np.convolve` for MA part and
         Numba-accelerated code for AR. """
         b_ext = self.source_scaling * np.hstack(([1], self.b))
-        u = np.convolve(u_out_full, b_ext, mode="valid")
+        u = np.convolve(x_out_full, b_ext, mode="valid")
 
         if self.p > 0:
             # flip doesn't create a copy by default, which can slow Numba!
@@ -223,19 +301,38 @@ class Arma(object):
         else:
             y_out_full[self.p :] = u + self.bias
 
-    def _transform_numba(self, y_out_full: np.ndarray, u_out_full: np.ndarray):
+        if monitor is not None:
+            monitor.record_batch(
+                SimpleNamespace(
+                    input_=x_out_full[self.q :], output_=y_out_full[self.p :],
+                )
+            )
+
+    def _transform_numba(
+        self,
+        y_out_full: np.ndarray,
+        x_out_full: np.ndarray,
+        monitor: Optional[AttributeMonitor],
+    ):
         """ Perform the transformation using Numba-accelerated version of naive
         algorithm. """
         if self.q > 0:
             b_flip_big = self.source_scaling * np.hstack((np.flip(self.b), [1]))
-            u = _perform_ma(u_out_full, b_flip_big)
+            u = _perform_ma(x_out_full, b_flip_big)
         else:
-            u = u_out_full
+            u = x_out_full
 
         if self.p > 0:
             _perform_ar(y_out_full, u, np.copy(self.a[::-1]), self.p, self.bias)
         else:
             y_out_full[self.p :] = u + self.bias
+
+        if monitor is not None:
+            monitor.record_batch(
+                SimpleNamespace(
+                    input_=x_out_full[self.q :], output_=y_out_full[self.p :],
+                )
+            )
 
     def __str__(self) -> str:
         s = f"Arma(a={str(self.a)}, b={str(self.b)}, bias={str(self.bias)})"
@@ -328,25 +425,23 @@ class Arma(object):
 
 
 @njit
-def _perform_ar(
-    y: np.ndarray, u: np.ndarray, a_flip: np.ndarray, p: int, bias: float
-):
+def _perform_ar(y: np.ndarray, x: np.ndarray, a_flip: np.ndarray, p: int, bias: float):
     n = len(y) - p
     for i in range(n):
         crt_past = y[i : i + p]
         ar_part = np.dot(a_flip, crt_past)
-        y[i + p] = ar_part + u[i] + bias
+        y[i + p] = ar_part + x[i] + bias
 
 
 @njit
-def _perform_ma(u_out_full: np.ndarray, b_flip_big: np.ndarray) -> np.ndarray:
+def _perform_ma(x_out_full: np.ndarray, b_flip_big: np.ndarray) -> np.ndarray:
     q_big = len(b_flip_big)
     q = q_big - 1
-    n = len(u_out_full) - q
+    n = len(x_out_full) - q
     u = np.empty(n)
 
     for i in range(n):
-        u[i] = np.dot(b_flip_big, u_out_full[i : i + q_big])
+        u[i] = np.dot(b_flip_big, x_out_full[i : i + q_big])
 
     return u
 
@@ -402,9 +497,7 @@ def make_random_arma(
 
 
 def _generate_random_poly(
-    n: int,
-    radius: float,
-    rng: Union[np.random.Generator, np.random.RandomState],
+    n: int, radius: float, rng: Union[np.random.Generator, np.random.RandomState],
 ) -> np.ndarray:
     """ Generate a random real polynomial with roots constrained to lie within a
     disk of given radius.
@@ -431,9 +524,7 @@ def _generate_random_poly(
     n_complex = 2 * n_complex_pairs
 
     # generate pairs of random complex roots
-    roots[:n_complex_pairs] = radius * _random_unit_circle(
-        rng, size=n_complex_pairs
-    )
+    roots[:n_complex_pairs] = radius * _random_unit_circle(rng, size=n_complex_pairs)
     roots[n_complex_pairs:n_complex] = np.conjugate(roots[:n_complex_pairs])
 
     # generate one random real root, if necessary

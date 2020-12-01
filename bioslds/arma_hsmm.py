@@ -12,9 +12,10 @@ from typing import Sequence, Tuple, Union, Callable, Optional
 def sample_switching_models(
     models: Sequence,
     usage_seq: Sequence,
-    U: Union[None, Sequence, Callable] = None,
+    X: Union[None, Sequence, Callable] = None,
     initial_conditions: Optional[Tuple[Sequence, Sequence]] = None,
-) -> Tuple[np.ndarray, np.ndarray]:
+    return_input: bool = False,
+) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
     """ Sample from a non-stationary stochastic processes that switches between
     different ARMA models at given times.
 
@@ -28,16 +29,20 @@ def sample_switching_models(
     usage_seq
         Sequence identifying the model to use at each time steps. Models are
         labeled from `0` to `len(models) - 1`.
-    U
+    X
         If given, this overrides the input source for the models. If it is a
         sequence, it should be at least as long as `len(usage_seq)`.
     initial_conditions
-        A tuple, `(initial_y, initial_u)`, of recent samples of the output and
+        A tuple, `(initial_y, initial_x)`, of recent samples of the output and
         input sequences used to seed the simulation. If these are not provided,
         they are assumed equal to zero.
+    return_input
+        If true, returns both output and input. If false (the default), returns only
+        the output.
 
-    Returns a tuple `(Y, U)` of generated output samples and input samples. If
-    the `U` parameter was used and was a sequence, the output `U` simply mirrors
+    Returns a sequence `Y` of generated samples. If `return_input` is true,
+    returns a  tuple `(Y, X)` of generated output samples and input samples. If
+    the `U` parameter was used and was a sequence, the output `X` simply mirrors
     the input.
     """
     # check the inputs
@@ -47,17 +52,17 @@ def sample_switching_models(
     if np.min(usage_seq) < 0 or np.max(usage_seq) >= len(models):
         raise ValueError("Invalid entry in usage_seq vector.")
 
-    # handle vector U
-    if U is not None and not callable(U):
-        if len(U) < len(usage_seq):
-            raise ValueError("Not enough input values in U.")
+    # handle vector X
+    if X is not None and not callable(X):
+        if len(X) < len(usage_seq):
+            raise ValueError("Not enough input values in X.")
 
-        U_ret = U
-        U = sources.Stream(U)
-        have_U_ret = True
+        X_ret = X
+        X = sources.Stream(X)
+        have_X_ret = True
     else:
-        U_ret = np.zeros(len(usage_seq))
-        have_U_ret = False
+        X_ret = np.zeros(len(usage_seq))
+        have_X_ret = False
 
     # handle default initial conditions
     if initial_conditions is None:
@@ -76,9 +81,7 @@ def sample_switching_models(
         else:
             n_left = model.p - ptr
             if len(initial_conditions[0]) >= n_left:
-                history_y = np.hstack(
-                    (initial_conditions[0][-n_left:], Y_ret[:ptr])
-                )
+                history_y = np.hstack((initial_conditions[0][-n_left:], Y_ret[:ptr]))
             else:
                 history_y = np.hstack(
                     (
@@ -88,35 +91,36 @@ def sample_switching_models(
                     )
                 )
         if ptr >= model.q:
-            history_u = np.copy(U_ret[ptr - model.q : ptr])
+            history_x = np.copy(X_ret[ptr - model.q : ptr])
         else:
             n_left = model.q - ptr
             if len(initial_conditions[1]) >= n_left:
-                history_u = np.hstack(
-                    (initial_conditions[1][-n_left:], U_ret[:ptr])
-                )
+                history_x = np.hstack((initial_conditions[1][-n_left:], X_ret[:ptr]))
             else:
-                history_u = np.hstack(
+                history_x = np.hstack(
                     (
                         np.zeros(n_left - len(initial_conditions[1])),
                         initial_conditions[1],
-                        U_ret[:ptr],
+                        X_ret[:ptr],
                     )
                 )
 
-        model.history_ = (history_y, history_u)
+        model.history_ = (history_y, history_x)
 
         # generate and store the samples from this model
-        crt_y, crt_u = model.transform(n_samples, U=U)
+        crt_y, crt_x = model.transform(n_samples, X=X, return_input=True)
 
         Y_ret[ptr : ptr + n_samples] = crt_y
 
-        if not have_U_ret:
-            U_ret[ptr : ptr + n_samples] = crt_u
+        if not have_X_ret:
+            X_ret[ptr : ptr + n_samples] = crt_x
 
         ptr += n_samples
 
-    return Y_ret, U_ret
+    if return_input:
+        return Y_ret, X_ret
+    else:
+        return Y_ret
 
 
 class ArmaHSMM(object):
@@ -128,6 +132,10 @@ class ArmaHSMM(object):
 
     Attributes
     ==========
+    n_features : int
+        Number of input dimensions. This is always equal to 1.
+     n_components : int
+        Number of output dimensions.This is always equal to 1.
     models
         Sequence of models to use.
     smm
@@ -148,12 +156,21 @@ class ArmaHSMM(object):
         self.models = models
         self.smm = SemiMarkov(len(models), **kwargs)
 
+        self.n_features = 1
+        self.n_components = 1
+
     def transform(
         self,
         n_samples: Optional[int] = None,
-        U: Union[None, Sequence, Callable] = None,
+        X: Union[None, Sequence, Callable] = None,
         initial_conditions: Optional[Tuple[Sequence, Sequence]] = None,
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        return_input: bool = False,
+        return_usage_seq: bool = False,
+    ) -> Union[
+        np.ndarray,
+        Tuple[np.ndarray, np.ndarray],
+        Tuple[np.ndarray, np.ndarray, np.ndarray],
+    ]:
         """ Process input samples.
 
         The function uses exactly `n_samples` input samples.
@@ -167,30 +184,53 @@ class ArmaHSMM(object):
         n_samples
             Number of samples to generate. If not provided, `U` must be provided
             and it must be a sequence.
-        U
+        X
             Input samples or input generator. See `Arma.transform`.
         initial_conditions
-            A tuple, `(initial_y, initial_u)`, of recent samples of the output
+            A tuple, `(initial_y, initial_x)`, of recent samples of the output
             and input sequences used to seed the simulation. If these are not
             provided, they are assumed equal to zero.
+        return_input
+            If true, returns both output and input. If false (the default), returns only
+            the output.
+        return_usage_seq
+            If true, returns the `usage_seq` in addition to output (and potentially
+            input).
 
-        Returns a tuple `(Y, U, usage_seq)` of generated `y` and `u` samples,
-        and the integer `usage_seq` indicating which models was used at each
-        time step. If the `U` parameter was used and was a sequence, the output
-        `U` simply mirrors the input `U`.
+        Returns either a single array (`Y`) if `return_input` and `return_usage_seq` are
+        both false; or a tuple `(Y, X)` or `(Y, usage_sea)` if only `return_input` or
+        only `return_usage_seq` is true, respectively; or a tuple `(Y, X, usage_seq)` if
+        both are true. Here `Y` is an array of generated `y`; `X` contains the input `x`
+        samples; and `usage_seq` is an integer array indicating which model was used at
+        each time step. If the `X` parameter was used and was a sequence, the output `X`
+        simply mirrors the input `X`.
         """
         # check inputs
         if n_samples is None:
-            if U is None or not hasattr(U, "__len__"):
+            if X is None or not hasattr(X, "__len__"):
                 raise ValueError("Need either n_samples or sequence U.")
-            n_samples = len(U)
+            n_samples = len(X)
 
         # generate usage sequence, then use sample_switching_models
         usage_seq = self.smm.sample(n_samples)
-        y, u = sample_switching_models(
-            self.models, usage_seq, U=U, initial_conditions=initial_conditions
+        y, x = sample_switching_models(
+            self.models,
+            usage_seq,
+            X=X,
+            initial_conditions=initial_conditions,
+            return_input=True,
         )
-        return y, u, usage_seq
+
+        res = (y,)
+        if return_input:
+            res = res + (x,)
+        if return_usage_seq:
+            res = res + (usage_seq,)
+
+        if len(res) == 1:
+            return res[0]
+        else:
+            return res
 
     def __repr__(self) -> str:
         r = f"ArmaHSMM(models={repr(self.models)}, smm={repr(self.smm)})"
