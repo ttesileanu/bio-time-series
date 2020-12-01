@@ -7,7 +7,11 @@ import h5py
 
 from typing import Tuple
 
-from bioslds.regressors import BioWTARegressor, CrosscorrelationRegressor
+from bioslds.regressors import (
+    BioWTARegressor,
+    CrosscorrelationRegressor,
+    CepstralRegressor,
+)
 from bioslds.batch import hyper_score_ar
 from bioslds.hyperopt import random_maximize
 from bioslds.dataset import RandomArmaDataset
@@ -47,6 +51,7 @@ def run_hyper_optimize(
     temperature_log: bool,
     timescale_range: tuple,
     timescale_log: bool,
+    cepstral_order_range: tuple,
     monitor: list,
     monitor_step: int,
     economy: bool,
@@ -108,6 +113,23 @@ def run_hyper_optimize(
                     del crt_res[1].history
             return crt_res
 
+    elif algo == "cepstral":
+
+        def fct(**kwargs):
+            crt_res = hyper_score_ar(
+                CepstralRegressor,
+                *common_hyper_args,
+                initial_weights="oracle_ar",
+                cepstral_order=kwargs["cepstral_order"],
+                cepstral_kws={"rate": kwargs["rate"]},
+                **common_hyper_kws,
+            )
+            if economy:
+                del crt_res[1].regressors
+                if len(monitor) == 0:
+                    del crt_res[1].history
+            return crt_res
+
     else:
         raise ValueError("Unknown algo.")
 
@@ -118,6 +140,7 @@ def run_hyper_optimize(
             "exp_streak": exp_streak_range,
             "temperature": temperature_range,
             "timescale": timescale_range,
+            "cepstral_order": cepstral_order_range,
         },
         n_trials,
         log_scale=log_scale,
@@ -259,6 +282,13 @@ if __name__ == "__main__":
         help="sample averaging timescale in log space",
     )
     parser.add_argument(
+        "--cesptral-order",
+        type=int,
+        nargs=2,
+        default=(3, 3),
+        help="range for cepstral order",
+    )
+    parser.add_argument(
         "--store-signal-set",
         action="store_true",
         default=False,
@@ -318,7 +348,7 @@ if __name__ == "__main__":
         main_args.fix_scale = None
 
     # perform some checks
-    if main_args.algorithm not in ["biowta", "xcorr"]:
+    if main_args.algorithm not in ["biowta", "xcorr", "cepstral"]:
         exit("Unknown algorithm.")
 
     if main_args.verbose:
@@ -362,6 +392,7 @@ if __name__ == "__main__":
         temperature_log=main_args.temperature_log,
         timescale_range=main_args.timescale_range,
         timescale_log=main_args.timescale_log,
+        cepstral_order=main_args.cepstral_order,
         monitor=main_args.monitor,
         monitor_step=main_args.monitor_step,
         economy=main_args.economy,
