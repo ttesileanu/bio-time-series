@@ -18,6 +18,7 @@ def hyper_score_ar(
     metric: Callable[[np.ndarray, np.ndarray], float],
     rng: Union[int, np.random.RandomState, np.random.Generator] = 0,
     fit_kws: Optional[dict] = None,
+    initial_weights: str = "default",
     monitor: Optional[Sequence] = None,
     monitor_step: int = 1,
     progress: Optional[Callable] = None,
@@ -57,6 +58,12 @@ def hyper_score_ar(
         seed, a random number generator is created using `np.random.default_rng`.
     fit_kws
         Additional argument to pass to `transform_ar`.
+    initial_weights
+        How to set the initial weights (for regressors that have that option). This can
+        be
+          "default":    do the default, i.e., no `weights` attribute passed to __init__
+          "oracle_ar":  pass the `a` coefficients from the signal's `armas` member as
+                        `weights`.
     monitor
         Sequence of strings denoting values to monitor during the inference procedure
         for each regressor and signal pair. The special value "r" can be used to also
@@ -132,10 +139,14 @@ def hyper_score_ar(
     for i, signal in enumerate(it):
         # create the regressor
         crt_args = copy.copy(kwargs)
-        if not hasattr(crt_args, "rng"):
-            crt_seed = regressor_seeds[i]
-            crt_rng = np.random.default_rng(crt_seed)
-            crt_args["rng"] = crt_rng
+
+        crt_seed = regressor_seeds[i]
+        crt_rng = np.random.default_rng(crt_seed)
+        crt_args["rng"] = crt_rng
+
+        if initial_weights == "oracle_ar" and not hasattr(crt_args, "weights"):
+            crt_args["weights"] = np.asarray([_.a for _ in signal.armas])
+
         regressor = regressor_class(**crt_args)
 
         # run transform_ar with this regressor

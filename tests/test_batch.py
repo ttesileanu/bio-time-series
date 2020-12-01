@@ -97,7 +97,7 @@ class TestHyperScoreARRegressorCalls(unittest.TestCase):
                 self.dataset,
                 self.metric,
                 fit_kws=self.fit_kws,
-                **self.kwargs
+                **self.kwargs,
             )
 
             self.mock_transform_ar = mock_transform_ar
@@ -547,6 +547,50 @@ class TestHyperScoreARRegressorDetails(unittest.TestCase):
     def test_returned_regressors_are_correct(self):
         for regressor, regressor_exp in zip(self.res[1].regressors, self.regressors):
             self.assertIs(regressor, regressor_exp)
+
+
+class TestHyperScoreARInitialWeightsOracleAR(unittest.TestCase):
+    def setUp(self):
+        self.rng = np.random.default_rng(0)
+        self.n_signals = 5
+        self.n_samples = 34
+        self.n_models = 4
+
+        self.ar_order = 3
+        self.models = self.rng.normal(
+            size=(self.n_signals, self.n_models, self.ar_order)
+        )
+
+        self.dataset = [
+            SimpleNamespace(
+                y=self.rng.normal(size=self.n_samples),
+                usage_seq=self.rng.integers(0, self.n_models, size=self.n_samples),
+                armas=[SimpleNamespace(a=model) for model in sig_models],
+            )
+            for sig_models in self.models
+        ]
+
+        self.regressor_class = Mock(
+            side_effect=lambda *args, **kwargs: Mock(
+                n_features=self.ar_order,
+                transform=Mock(
+                    return_value=(
+                        self.rng.uniform(size=(self.n_samples, self.n_models)),
+                        SimpleNamespace(),
+                    ),
+                ),
+                **kwargs,
+            )
+        )
+
+        self.metric = lambda x, y: 1.0
+        self.res = hyper_score_ar(
+            self.regressor_class, self.dataset, self.metric, initial_weights="oracle_ar"
+        )
+
+    def test_regressors_inited_with_appropriate_weights(self):
+        for i, regressor in enumerate(self.res[1].regressors):
+            np.testing.assert_allclose(regressor.weights, self.models[i])
 
 
 if __name__ == "__main__":
