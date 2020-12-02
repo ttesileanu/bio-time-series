@@ -378,5 +378,27 @@ class TestRandomArmaDatasetFixScaleNoiseScaledPerProcess(unittest.TestCase):
             np.testing.assert_allclose(sig.usage_seq, sig_fix.usage_seq)
 
 
+class TestRandomArmaDatasetNormalize(unittest.TestCase):
+    def setUp(self):
+        self.n_signals = 3
+        self.n_samples = 100
+        self.arma_orders = [(3, 2), (2, 4), (1, 5), (4, 0)]
+        self.kwargs = dict(
+            n_signals=self.n_signals,
+            n_samples=self.n_samples,
+            arma_orders=self.arma_orders
+        )
+        self.dataset = RandomArmaDataset(**self.kwargs)
+
+    def test_normalize_returns_same_signals_with_unit_variance(self):
+        dataset_norm = RandomArmaDataset(**self.kwargs, normalize=True)
+        for sig, sig_norm in zip(self.dataset, dataset_norm):
+            # noinspection PyTypeChecker
+            self.assertAlmostEqual(np.std(sig_norm.y), 1)
+            np.testing.assert_allclose(sig_norm.y, sig.y / np.std(sig.y))
+            np.testing.assert_allclose(sig_norm.u, sig.u)
+            np.testing.assert_equal(sig_norm.usage_seq, sig.usage_seq)
+
+
 if __name__ == "__main__":
     unittest.main()
