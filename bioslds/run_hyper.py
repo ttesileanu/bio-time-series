@@ -224,6 +224,12 @@ if __name__ == "__main__":
         help="fix output standard deviation; set to zero to fix input scale instead",
     )
     parser.add_argument(
+        "--normalize",
+        action="store_true",
+        default=False,
+        help="ensure that each signal has unit variance",
+    )
+    parser.add_argument(
         "--max-pole-radius",
         type=float,
         default=1.0,
@@ -370,6 +376,7 @@ if __name__ == "__main__":
         dwell_times=main_args.average_dwell,
         min_dwell=main_args.min_dwell,
         fix_scale=main_args.fix_scale,
+        normalize=main_args.normalize,
         arma_kws={"max_pole_radius": main_args.max_pole_radius},
         rng=main_args.dataset,
     )
