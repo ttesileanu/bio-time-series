@@ -6,4 +6,19 @@ module load python3
 
 source env/bin/activate
 
-./run_hyper.py -n100 --n-signals 25 -d$1 -c$1 -o$1 --rate-range 1.5e-5 0.04 --exp-streak-range 1.5 4.5 --rate-log --economy test_$1.hdf5 3 3 biowta > logs/$1.out 2> logs/$1.err
+./run_hyper.py \
+    -n100 \
+    --n-signals 50 \
+    -d$1 \
+    -c$1 \
+    -o$1 \
+    --normalize \
+    --max-pole-radius 0.95 \
+    --rate-range 0.0001 0.01 --rate-log \
+    --exp-streak-range 2.0 5.0 \
+    --temperature-range 0.5 0.5 \
+    --timescale-range 1.0 6.0 --timescale-log \
+    --economy \
+    test_$1.hdf5 3 3 biowta \
+    > logs/$1.out \
+    2> logs/$1.err
