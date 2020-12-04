@@ -1,0 +1,5 @@
+env
+logs
+*.out
+*kvsinfo.txt
+*status.txt
