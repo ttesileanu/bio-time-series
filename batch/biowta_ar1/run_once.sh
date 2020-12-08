@@ -15,9 +15,9 @@ source env/bin/activate
     --normalize \
     --max-pole-radius 0.95 \
     --rate-range 0.0001 0.01 --rate-log \
-    --exp-streak-range 2.0 5.0 \
-    --temperature-range 0.5 0.5 \
-    --timescale-range 1.0 6.0 --timescale-log \
+    --exp-streak-range 2.0 10.0 \
+    --temperature-range 0.0 2.0 \
+    --timescale-range 1.0 4.0 --timescale-log \
     --economy \
     test_$1.hdf5 1 0 biowta \
     > logs/$1.out \
