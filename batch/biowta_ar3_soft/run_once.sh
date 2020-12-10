@@ -14,10 +14,11 @@ source env/bin/activate
     -o$1 \
     --normalize \
     --max-pole-radius 0.95 \
-    --rate-range 0.007 0.3 --rate-log \
-    --exp-streak-range 1.0 1.0 \
-    --cepstral-order-range 1 6 \
+    --rate-range 0.00005 0.05 --rate-log \
+    --exp-streak-range 2.0 2.0 \
+    --temperature-range 0.0 2.0 \
+    --timescale-range 1.0 1.0 --timescale-log \
     --economy \
-    test_$1.hdf5 5 0 cepstral \
+    test_$1.hdf5 3 0 biowta \
     > logs/$1.out \
     2> logs/$1.err

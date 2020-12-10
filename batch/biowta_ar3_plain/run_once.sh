@@ -14,11 +14,11 @@ source env/bin/activate
     -o$1 \
     --normalize \
     --max-pole-radius 0.95 \
-    --rate-range 0.0001 0.01 --rate-log \
-    --exp-streak-range 2.0 10.0 \
-    --temperature-range 0.0 2.0 \
-    --timescale-range 1.0 4.0 --timescale-log \
+    --rate-range 0.00001 0.1 --rate-log \
+    --exp-streak-range 2.0 2.0 \
+    --temperature-range 0.0 0.0 \
+    --timescale-range 1.0 1.0 --timescale-log \
     --economy \
-    test_$1.hdf5 5 0 biowta \
+    test_$1.hdf5 3 0 biowta \
     > logs/$1.out \
     2> logs/$1.err
