@@ -356,6 +356,81 @@ def show_weight_progression(
             ax.set_ylim(*max_ylims)
 
 # %% [markdown]
+# # Problem setup
+
+# %%
+problem_setup = SimpleNamespace(
+    n_samples=500,
+    orders=[(3, 0), (3, 0)],
+    dwell_times=100,
+    min_dwell=50,
+    max_pole_radius=0.95,
+    normalize=True,
+    fix_scale=None,
+    seed=5,
+)
+problem_setup.dataset = RandomArmaDataset(
+    1,
+    problem_setup.n_samples,
+    problem_setup.orders,
+    dwell_times=problem_setup.dwell_times,
+    min_dwell=problem_setup.min_dwell,
+    fix_scale=problem_setup.fix_scale,
+    normalize=problem_setup.normalize,
+    rng=problem_setup.seed,
+    arma_kws={"max_pole_radius": problem_setup.max_pole_radius},
+)
+problem_setup.sig = problem_setup.dataset[0].y
+problem_setup.usage_seq = problem_setup.dataset[0].usage_seq
+
+# %%
+with FigureManager(despine_kws={"left": True}) as (_, ax):
+    ax.plot(problem_setup.sig)
+    ax.set_xlabel("time")
+
+    ax.set_xlim(0, problem_setup.n_samples)
+    ax.set_yticks([])
+    
+    show_latent(problem_setup.usage_seq)
+
+# %%
+with plt.style.context(paper_style):
+    with FigureManager(
+        2, 1, figsize=(5.76, 2.5), sharex=True, gridspec_kw={"height_ratios": (1, 2)}
+    ) as (
+        fig,
+        (ax0, ax1),
+    ):
+        ax0.plot(problem_setup.usage_seq == 0, "C0", label="$z_1$")
+        ax0.plot(problem_setup.usage_seq == 1, "C1", label="$z_2$")
+
+        ax0.fill_between(
+            np.arange(problem_setup.n_samples),
+            problem_setup.usage_seq == 0,
+            color="C0",
+            alpha=0.1,
+        )
+        ax0.fill_between(
+            np.arange(problem_setup.n_samples),
+            problem_setup.usage_seq == 1,
+            color="C1",
+            alpha=0.1,
+        )
+        ax0.legend(frameon=False)
+
+        ax1.plot(problem_setup.sig)
+        ax1.set_xlabel("time")
+
+        ax1.set_xlim(0, problem_setup.n_samples)
+        ax1.set_yticks([])
+
+        show_latent(problem_setup.usage_seq, ax=ax1)
+
+    sns.despine(left=True, ax=ax1)
+
+fig.savefig(os.path.join(fig_path, "example_switching_signal_and_z.pdf"))
+
+# %% [markdown]
 # # Run BioWTA, autocorrelation, and cepstral oracle algorithms on signals based on pairs of AR(3) processes
 
 # %% [markdown]
@@ -514,17 +589,7 @@ late_errors_norm = np.asarray(
 good_ident_idx = np.argmin(late_errors_norm)
 
 # %%
-with plt.style.context(
-    [
-        "seaborn-paper",
-        {
-            "font.size": 8,
-            "axes.labelsize": 8,
-            "xtick.labelsize": 6,
-            "ytick.labelsize": 6,
-        },
-    ]
-):
+with plt.style.context(paper_style):
     fig, axs = make_multi_trajector_plot(
         two_ar3.result_biowta[1],
         two_ar3.dataset,
@@ -693,80 +758,93 @@ print(
 )
 
 # %% [markdown]
-# # Add BioWTA improvements one by one
-
-# %% [markdown]
-# Plain BioWTA: hard clustering, no continuity correction, no error averaging.
+# # Run BioWTA with all combinations of improvements
 
 # %%
-t0 = time.time()
-two_ar3.result_biowta_plain = hyper_score_ar(
-    BioWTARegressor,
-    two_ar3.dataset,
-    two_ar3.metric,
-    n_models=two_ar3.n_models,
-    n_features=two_ar3.n_features,
-    # rate=two_ar3.rate_biowta,
-    rate=0.00374,
-    progress=tqdm,
-    monitor=["r", "weights_", "prediction_"],
-)
-t1 = time.time()
-print(
-    f"Median accuracy score plain BioWTA: {two_ar3.result_biowta_plain[0]:.2}. "
-    f"(Took {t1 - t0:.2f} seconds.)"
-)
-
-# %% [markdown]
-# Soft WTA: soft clustering, but otherwise still no continuity correction, no error averaging.
+two_ar3.configurations = {
+    (1, 1, 0): {
+        "rate": 0.005460,
+        "trans_mat": 1 - 1 / 6.792138,
+        "temperature": 0.961581,
+        "error_timescale": 1.000000,
+    },
+    (0, 0, 1): {
+        "rate": 0.004187,
+        "trans_mat": 1 - 1 / 2.000000,
+        "temperature": 0.000000,
+        "error_timescale": 3.937542,
+    },
+    (1, 1, 1): {
+        "rate": 0.001664,
+        "trans_mat": 1 - 1 / 4.635351,
+        "temperature": 0.629294,
+        "error_timescale": 1.217550,
+    },
+    (0, 1, 1): {
+        "rate": 0.003013,
+        "trans_mat": 1 - 1 / 2.179181,
+        "temperature": 0.000000,
+        "error_timescale": 2.470230,
+    },
+    (1, 0, 1): {
+        "rate": 0.005444,
+        "trans_mat": 1 - 1 / 2.000000,
+        "temperature": 0.062365,
+        "error_timescale": 3.842287,
+    },
+    (0, 1, 0): {
+        "rate": 0.001906,
+        "trans_mat": 1 - 1 / 2.852480,
+        "temperature": 0.000000,
+        "error_timescale": 1.000000,
+    },
+    (0, 0, 0): {
+        "rate": 0.005638,
+        "trans_mat": 1 - 1 / 2.000000,
+        "temperature": 0.000000,
+        "error_timescale": 1.000000,
+    },
+    (1, 0, 0): {
+        "rate": 0.000394,
+        "trans_mat": 1 - 1 / 2.000000,
+        "temperature": 0.008065,
+        "error_timescale": 1.000000,
+    },
+}
+two_ar3.configurations_human = {
+    (0, 0, 0): "plain",
+    (0, 0, 1): "avg_error",
+    (0, 1, 0): "persistent",
+    (1, 0, 0): "soft",
+    (0, 1, 1): "persistent+avg_error",
+    (1, 1, 0): "soft+persistent",
+    (1, 0, 1): "soft+avg_error",
+    (1, 1, 1): "full",
+}
 
 # %%
-t0 = time.time()
-two_ar3.result_biowta_soft = hyper_score_ar(
-    BioWTARegressor,
-    two_ar3.dataset,
-    two_ar3.metric,
-    n_models=two_ar3.n_models,
-    n_features=two_ar3.n_features,
-    # rate=two_ar3.rate_biowta,
-    # temperature=two_ar3.temperature_biowta,
-    rate=0.000466,
-    temperature=0.0320,
-    progress=tqdm,
-    monitor=["r", "weights_", "prediction_"],
-)
-t1 = time.time()
-print(
-    f"Median accuracy score soft BioWTA: {two_ar3.result_biowta_soft[0]:.2}. "
-    f"(Took {t1 - t0:.2f} seconds.)"
-)
+two_ar3.result_mods = {}
+for key in tqdm(two_ar3.configurations, desc="cfg"):
+    two_ar3.result_mods[key] = hyper_score_ar(
+        BioWTARegressor,
+        two_ar3.dataset,
+        two_ar3.metric,
+        n_models=two_ar3.n_models,
+        n_features=two_ar3.n_features,
+        progress=tqdm,
+        monitor=["r", "weights_", "prediction_"],
+        **two_ar3.configurations[key],
+    )
 
-# %% [markdown]
-# Soft, persisent WTA: soft clustering and continuity correction, but no error averaging.
-
-# %%
-t0 = time.time()
-two_ar3.result_biowta_soft_persistent = hyper_score_ar(
-    BioWTARegressor,
-    two_ar3.dataset,
-    two_ar3.metric,
-    n_models=two_ar3.n_models,
-    n_features=two_ar3.n_features,
-    # rate=two_ar3.rate_biowta,
-    # trans_mat=1 - 1 / two_ar3.streak_biowta,
-    # temperature=two_ar3.temperature_biowta,
-    rate=0.00161,
-    trans_mat=1 - 1 / 5.460,
-    temperature=0.834,
-    progress=tqdm,
-    monitor=["r", "weights_", "prediction_"],
-)
-t1 = time.time()
-print(
-    f"Median accuracy score soft, persistent BioWTA: "
-    f"{two_ar3.result_biowta_soft_persistent[0]:.2}. "
-    f"(Took {t1 - t0:.2f} seconds.)"
-)
+    crt_scores = two_ar3.result_mods[key][1].trial_scores
+    crt_median = np.median(crt_scores)
+    crt_quantile = np.quantile(crt_scores, 0.05)
+    crt_good = np.mean(crt_scores > good_score)
+    print(
+        f"{''.join(str(_) for _ in key)}: median={crt_median:.4f}, "
+        f"5%={crt_quantile:.4f}, "
+        f"fraction>{int(100 * good_score)}%={crt_good:.4f}"
+    )
 
 
 # %% [markdown]
@@ -929,16 +1007,49 @@ fig.savefig(
 )
 
 # %%
+# with plt.style.context(paper_style):
+#     with FigureManager(1, 4, despine_kws={"offset": 5}, figsize=(5.76, 1.5)) as (
+#         fig,
+#         axs,
+#     ):
+#         results_sequence = [
+#             ("plain", two_ar3.result_biowta_plain),
+#             ("soft", two_ar3.result_biowta_soft),
+#             ("persistent", two_ar3.result_biowta_soft_persistent),
+#             ("full", two_ar3.result_biowta),
+#         ]
+#         additions = ["", "soft", "persistent", "averaging"]
+#         for i, (ax, crt_res) in enumerate(zip(axs, results_sequence)):
+#             ax.plot([0.5, 1], [0.5, 1], "--", c="gray", zorder=-15)
+#             ax.scatter(
+#                 predicted_plain_scores, crt_res[1][1].trial_scores, s=4, alpha=0.5
+#             )
+
+#             ax.set_aspect(1)
+#             ax.set_xlabel("naive score")
+
+#             if i == 0:
+#                 ax.set_ylabel("score plain")
+#             else:
+#                 ax.set_ylabel("+ " + additions[i])
+
+#             ax.set_xlim([0.5, 1])
+#             ax.set_ylim([0.5, 1])
+
+# fig.savefig(
+#     os.path.join(fig_path, "effect_of_biowta_improvements.pdf"), transparent=True
+# )
+
+# %%
 with plt.style.context(paper_style):
     with FigureManager(1, 4, despine_kws={"offset": 5}, figsize=(5.76, 1.5)) as (
         fig,
         axs,
     ):
         results_sequence = [
-            ("plain", two_ar3.result_biowta_plain),
-            ("soft", two_ar3.result_biowta_soft),
-            ("persistent", two_ar3.result_biowta_soft_persistent),
-            ("full", two_ar3.result_biowta),
+            ("plain", two_ar3.result_mods[0, 0, 0]),
+            ("persistent", two_ar3.result_mods[0, 1, 0]),
+            ("soft+persist.", two_ar3.result_mods[1, 1, 0]),
         ]
         additions = ["", "soft", "persistent", "averaging"]
         for i, (ax, crt_res) in enumerate(zip(axs, results_sequence)):
@@ -950,13 +1061,28 @@ with plt.style.context(paper_style):
             ax.set_aspect(1)
             ax.set_xlabel("naive score")
 
-            if i == 0:
-                ax.set_ylabel("score plain")
-            else:
-                ax.set_ylabel("+ " + additions[i])
+            ax.set_ylabel(crt_res[0])
 
             ax.set_xlim([0.5, 1])
             ax.set_ylim([0.5, 1])
+
+#         ax = axs[-1]
+#         ax.bar(
+#             np.arange(8),
+#             [
+#                 np.mean(_[1].trial_scores > good_score)
+#                 for _ in two_ar3.result_mods.values()
+#             ],
+#             width=0.3,
+#         )
+#         ax.set_xticks(np.arange(8))
+#         ax.set_xticklabels(
+#             [two_ar3.configurations_human[_] for _ in two_ar3.result_mods.keys()]
+#         )
+
+#     ax.xaxis.set_tick_params(rotation=90)
+
+axs[-1].set_visible(False)
 
 fig.savefig(
     os.path.join(fig_path, "effect_of_biowta_improvements.pdf"), transparent=True
