@@ -31,6 +31,7 @@ from tqdm.notebook import tqdm
 
 from sklearn import metrics
 
+from bioslds import sources
 from bioslds.regressors import (
     BioWTARegressor,
     CrosscorrelationRegressor,
@@ -40,7 +41,8 @@ from bioslds.plotting import FigureManager, show_latent, colorbar, make_gradient
 from bioslds.cluster_quality import calculate_sliding_score, unordered_accuracy_score
 from bioslds.batch import hyper_score_ar
 from bioslds.dataset import RandomArmaDataset
-from bioslds.arma import Arma
+from bioslds.arma import Arma, make_random_arma
+from bioslds.arma_hsmm import sample_switching_models
 
 fig_path = os.path.join("..", "figs", "draft")
 paper_style = [
@@ -431,6 +433,111 @@ with plt.style.context(paper_style):
 fig.savefig(os.path.join(fig_path, "example_switching_signal_and_z.pdf"))
 
 # %% [markdown]
+# # Problem setup, v2
+
+# %%
+problem_setup_v2 = SimpleNamespace(
+    n_samples=600, orders=[(3, 0), (2, 0), (1, 0)], max_pole_radius=0.95, seed=5,
+)
+rng = np.random.default_rng(problem_setup_v2.seed)
+problem_setup_v2.armas = [
+    make_random_arma(*_, rng=rng, max_pole_radius=problem_setup_v2.max_pole_radius)
+    for _ in problem_setup_v2.orders
+]
+
+problem_setup_v2.usage_seq = np.zeros(problem_setup_v2.n_samples, dtype=int)
+problem_setup_v2.usage_seq[
+    problem_setup_v2.n_samples // 7 : 4 * problem_setup_v2.n_samples // 7
+] = 1
+problem_setup_v2.usage_seq[
+    4 * problem_setup_v2.n_samples // 7 : 6 * problem_setup_v2.n_samples // 7
+] = 2
+problem_setup_v2.usage_seq[6 * problem_setup_v2.n_samples // 7 :] = 1
+problem_setup_v2.sig, problem_setup_v2.x = sample_switching_models(
+    problem_setup_v2.armas,
+    usage_seq=problem_setup_v2.usage_seq,
+    X=sources.GaussianNoise(rng),
+    return_input=True,
+)
+
+# %%
+with FigureManager(despine_kws={"left": True}) as (_, ax):
+    ax.plot(problem_setup_v2.sig)
+    ax.set_xlabel("time")
+
+    ax.set_xlim(0, problem_setup_v2.n_samples)
+    ax.set_yticks([])
+    
+    show_latent(problem_setup_v2.usage_seq)
+
+# %%
+with plt.style.context(paper_style):
+    with FigureManager(
+        2, 1, figsize=(5.76, 2.5), sharex=True, gridspec_kw={"height_ratios": (3, 1.5)}
+    ) as (fig, (ax0, ax1)):
+        ax0.axhline(0, ls=":", c="gray", zorder=-1)
+        ax0.plot(problem_setup_v2.sig)
+        yl = np.max(np.abs(problem_setup_v2.sig))
+        ax0.set_ylim(-yl, yl)
+
+        show_latent(problem_setup_v2.usage_seq, ax=ax0)
+
+        # ax0.set_xlabel("time")
+        ax0.set_ylabel("signal")
+
+        ax0.set_xlim(0, problem_setup_v2.n_samples)
+        ax0.set_yticks([])
+
+        # start with ground truth, then add some noise, and finally smooth and normalize
+        problem_setup_v2.mock_z = np.asarray(
+            [problem_setup_v2.usage_seq == [0, 2, 1][_] for _ in range(3)]
+        )
+
+        rng = np.random.default_rng(problem_setup_v2.seed)
+        problem_setup_v2.mock_z = np.clip(
+            problem_setup_v2.mock_z
+            + 0.20 * rng.normal(size=problem_setup_v2.mock_z.shape),
+            0,
+            None,
+        )
+
+        # smooth
+        crt_kernel = np.exp(-0.5 * np.linspace(-3, 3, 36) ** 2)
+        problem_setup_v2.mock_z = np.array(
+            [
+                np.convolve(_, crt_kernel)[: problem_setup_v2.n_samples]
+                for _ in problem_setup_v2.mock_z
+            ]
+        )
+
+        # normalize
+        problem_setup_v2.mock_z = problem_setup_v2.mock_z / np.sum(
+            problem_setup_v2.mock_z, axis=0
+        )
+
+        for i in range(3):
+            ax1.plot(problem_setup_v2.mock_z[i], f"C{i}", label=f"$z_{i}$")
+
+        for i in range(3):
+            ax1.fill_between(
+                np.arange(problem_setup_v2.n_samples),
+                problem_setup_v2.mock_z[i],
+                color=f"C{i}",
+                alpha=0.1,
+            )
+        ax1.legend(frameon=False, loc=(0.25, 0.27), fontsize=6, ncol=3)
+        ax1.set_ylim(0, 1)
+
+        ax1.set_xlabel("time")
+        ax1.set_ylabel("inference")
+
+        show_latent(problem_setup_v2.usage_seq, show_bars=False, ax=ax1)
+
+#     sns.despine(left=True, ax=ax)
+
+fig.savefig(os.path.join(fig_path, "example_switching_signal_and_z_v2.pdf"))
+
+# %% [markdown]
 # # Run BioWTA, autocorrelation, and cepstral oracle algorithms on signals based on pairs of AR(3) processes
 
 # %% [markdown]
@@ -453,14 +560,22 @@ two_ar3 = SimpleNamespace(
     seed=153,
     n_models=2,
     n_features=3,
-    rate_biowta=0.00247,
-    streak_biowta=5.38,
-    temperature_biowta=0.800,
-    timescale_biowta=2.40,
-    rate_nsm=0.00585,
-    streak_nsm=10.4,
-    rate_cepstral=0.0755,
-    order_cepstral=3,
+    # rate_biowta=0.00247,
+    # streak_biowta=5.38,
+    # temperature_biowta=0.800,
+    # timescale_biowta=2.40,
+    rate_biowta=0.001992,
+    streak_biowta=7.794633,
+    temperature_biowta=1.036228,
+    timescale_biowta=1.0,
+    # rate_nsm=0.00585,
+    # streak_nsm=10.4,
+    rate_nsm=0.005028,
+    streak_nsm=9.527731,
+    # rate_cepstral=0.0755,
+    # order_cepstral=3,
+    rate_cepstral=0.071844,
+    order_cepstral=2,
     metric=unordered_accuracy_score,
 )
 two_ar3.dataset = RandomArmaDataset(
@@ -577,7 +692,7 @@ print(
 # ## Make plots
 
 # %% [markdown]
-# Find some "good" indices: one that yields a reasonably good score; and one that minimizes the reconstruction error for the weights.
+# Find some "good" indices: one that yields a reasonably good score despite having not-so-good reproduction of the weights; and one that minimizes the reconstruction error for the weights.
 
 # %%
 good_score = 0.85
@@ -587,6 +702,13 @@ late_errors_norm = np.asarray(
     [np.mean(_.weight_errors_normalized_[-1]) for _ in two_ar3.result_biowta[1].history]
 )
 good_ident_idx = np.argmin(late_errors_norm)
+
+# %%
+# tmp_mask = late_errors_norm > 1.0
+# tmp_mask_idxs = tmp_mask.nonzero()[0]
+# tmp_idx = tmp_mask_idxs[
+#     np.argmin(np.abs(two_ar3.result_biowta[1].trial_scores[tmp_mask] - good_score))
+# ]
 
 # %%
 with plt.style.context(paper_style):
@@ -639,9 +761,6 @@ print(
     f"Percentage of runs with BioWTA convergence times under {threshold_steps}: "
     f"{int(np.mean(np.asarray(two_ar3.result_biowta[1].convergence_times) <= threshold_steps) * 100)}%."
 )
-
-# %%
-two_ar3.result_biowta[1].regressors[0].trans_mat_
 
 # %%
 with plt.style.context(paper_style):
@@ -1050,8 +1169,8 @@ with plt.style.context(paper_style):
             ("plain", two_ar3.result_mods[0, 0, 0]),
             ("persistent", two_ar3.result_mods[0, 1, 0]),
             ("soft+persist.", two_ar3.result_mods[1, 1, 0]),
+            ("avg. only", two_ar3.result_mods[0, 0, 1]),
         ]
-        additions = ["", "soft", "persistent", "averaging"]
         for i, (ax, crt_res) in enumerate(zip(axs, results_sequence)):
             ax.plot([0.5, 1], [0.5, 1], "--", c="gray", zorder=-15)
             ax.scatter(
@@ -1082,7 +1201,7 @@ with plt.style.context(paper_style):
 
 #     ax.xaxis.set_tick_params(rotation=90)
 
-axs[-1].set_visible(False)
+# axs[-1].set_visible(False)
 
 fig.savefig(
     os.path.join(fig_path, "effect_of_biowta_improvements.pdf"), transparent=True
@@ -1098,7 +1217,7 @@ with plt.style.context(paper_style):
             ax,
             [
                 two_ar3.result_xcorr,
-                two_ar3.result_biowta_plain,
+                two_ar3.result_mods[0, 0, 0],
                 two_ar3.result_biowta,
                 two_ar3.result_cepstral,
             ],
