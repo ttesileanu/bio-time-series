@@ -1293,6 +1293,7 @@ with plt.style.context(paper_style):
             y=crt_y_values,
             palette=["C2", "gray", "C3", "gray", "gray", "gray"],
             order=[0, 1, 2, 3, 4],
+            cut=0,
             ax=ax,
         )
 
@@ -1558,5 +1559,95 @@ with plt.style.context(paper_style):
             
 fig.suptitle("Poles of\nAR processes", y=0.75)
 fig.savefig(os.path.join(fig_path, "biowta_good_vs_bad_reconstruction.pdf"))
+
+# %% [markdown]
+# ## SCRATCH
+
+# %%
+calculate_smooth_weight_errors(two_ar3.result_biowta_mods[0, 0, 0][1])
+
+# %%
+with plt.style.context(paper_style):
+    with FigureManager(
+        1,
+        3,
+        despine_kws={"offset": 5},
+        gridspec_kw={"width_ratios": (5, 1, 2)},
+        figsize=(5.76, 1.7),
+        constrained_layout=True,
+    ) as (fig, axs):
+        ax_weight_progress, ax_weight_histo, ax_weight_vs_seg = axs
+
+        # draw weight error progression
+        max_weight_error = 2.0
+        ax = ax_weight_progress
+        for crt_idx, crt_roll in enumerate(
+            two_ar3.result_biowta_mods[0, 0, 0][1].rolling_weight_errors_normalized
+        ):
+            crt_kws = {"c": "gray", "lw": 0.5, "alpha": 0.3}
+            if (
+                crt_idx == two_ar3.good_biowta_idx
+                or crt_idx == two_ar3.good_biowta_ident_idx
+            ):
+                crt_kws["lw"] = 2.0
+                crt_kws["alpha"] = 1.0
+                crt_kws["c"] = "C0" if crt_idx == two_ar3.good_biowta_idx else "C1"
+            ax.plot(*crt_roll, **crt_kws)
+        ax.set_ylim(0, max_weight_error)
+        ax.set_xlabel("time")
+        ax.set_ylabel("normalized\nreconstruction error")
+        ax.set_xlim(0, two_ar3.n_samples)
+
+        # draw the late error distribution
+        ax = ax_weight_histo
+        late_errors = [
+            _[1][-1] for _ in two_ar3.result_biowta_mods[0, 0, 0][1].rolling_weight_errors_normalized
+        ]
+        sns.kdeplot(y=late_errors, shade=True, color="gray", ax=ax)
+        sns.rugplot(y=late_errors, height=0.1, alpha=0.5, color="gray", ax=ax)
+        for i, special_idx in enumerate(
+            [two_ar3.good_biowta_idx, two_ar3.good_biowta_ident_idx]
+        ):
+            sns.rugplot(
+                y=[late_errors[special_idx]],
+                height=0.1,
+                alpha=0.5,
+                color=f"C{i}",
+                lw=2,
+                ax=ax,
+            )
+        ax.set_ylim(0, max_weight_error)
+        ax.set_yticks([])
+        ax.set_xlabel("pdf")
+
+        # show relation b/w weight reconstruction and segmentation score
+        ax = ax_weight_vs_seg
+        ar_diffs = [
+            np.linalg.norm(np.std([__.a for __ in _], axis=0))
+            for _ in two_ar3.dataset.armas
+        ]
+        h = ax.scatter(
+            two_ar3.result_biowta_mods[0, 0, 0][1].trial_scores, late_errors, s=6, c="gray", alpha=0.4
+        )
+        for i, special_idx in enumerate(
+            [two_ar3.good_biowta_idx, two_ar3.good_biowta_ident_idx]
+        ):
+            ax.scatter(
+                [two_ar3.result_biowta_mods[0, 0, 0][1].trial_scores[special_idx]],
+                [late_errors[special_idx]],
+                s=12,
+                c=f"C{i}",
+                alpha=1.0,
+            )
+        # colorbar(h)
+        ax.set_xlabel("segmentation accuracy")
+        ax.set_ylabel("normalized\nreconstruction error")
+        ax.set_ylim(0.0, max_weight_error)
+        ax.set_xlim(0.5, 1.0)
+
+        ax.yaxis.set_label_position("right")
+
+    sns.despine(ax=ax_weight_vs_seg, left=True, right=False, offset=5)
+    sns.despine(ax=ax_weight_histo, left=True)
 
 # %%
