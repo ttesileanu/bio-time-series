@@ -57,7 +57,7 @@ paper_style = [
 # # Useful definitions
 
 # %%
-def make_multi_trajector_plot(
+def make_multi_trajectory_plot(
     results: SimpleNamespace,
     dataset: RandomArmaDataset,
     metric: Callable = unordered_accuracy_score,
@@ -533,7 +533,7 @@ def get_accuracy_metrics(
 # %%
 def make_accuracy_plot(results, oracle, dataset, special_idxs) -> plt.Figure:
     with plt.style.context(paper_style):
-        fig, axs = make_multi_trajector_plot(
+        fig, axs = make_multi_trajectory_plot(
             results,
             dataset,
             n_traces=25,
@@ -752,7 +752,6 @@ fig.savefig(os.path.join(fig_path, "example_switching_signal_and_z_v2.pdf"))
 # %%
 two_ar3 = SimpleNamespace(
     n_signals=100,
-    # n_signals=10,
     n_samples=200_000,
     orders=[(3, 0), (3, 0)],
     dwell_times=100,
@@ -763,23 +762,13 @@ two_ar3 = SimpleNamespace(
     seed=153,
     n_models=2,
     n_features=3,
-    # rate_biowta=0.00247,
-    # streak_biowta=5.38,
-    # temperature_biowta=0.800,
-    # timescale_biowta=2.40,
-    rate_biowta=0.001992,
-    streak_biowta=7.794633,
-    temperature_biowta=1.036228,
-    timescale_biowta=1.0,
-    # rate_nsm=0.00585,
-    # streak_nsm=10.4,
     rate_nsm=0.005028,
     streak_nsm=9.527731,
-    # rate_cepstral=0.0755,
-    # order_cepstral=3,
     rate_cepstral=0.071844,
     order_cepstral=2,
     metric=unordered_accuracy_score,
+    good_score=0.85,
+    threshold_steps=10_000,
 )
 two_ar3.dataset = RandomArmaDataset(
     two_ar3.n_signals,
@@ -794,40 +783,145 @@ two_ar3.dataset = RandomArmaDataset(
 )
 
 # %% [markdown]
-# ## Run learning and inference
+# ## Run BioWTA with all combinations of enhancements
 
 # %%
-t0 = time.time()
-two_ar3.result_biowta = hyper_score_ar(
-    BioWTARegressor,
-    two_ar3.dataset,
-    two_ar3.metric,
-    n_models=two_ar3.n_models,
-    n_features=two_ar3.n_features,
-    rate=two_ar3.rate_biowta,
-    trans_mat=1 - 1 / two_ar3.streak_biowta,
-    temperature=two_ar3.temperature_biowta,
-    error_timescale=two_ar3.timescale_biowta,
-    progress=tqdm,
-    monitor=["r", "weights_", "prediction_"],
-)
-t1 = time.time()
-print(
-    f"Median accuracy score BioWTA: {two_ar3.result_biowta[0]:.2}. "
-    f"(Took {t1 - t0:.2f} seconds.)"
-)
+two_ar3.biowta_configurations = {
+    (1, 1, 0): {
+        "rate": 0.005460,
+        "trans_mat": 1 - 1 / 6.792138,
+        "temperature": 0.961581,
+        "error_timescale": 1.000000,
+    },
+    (0, 0, 1): {
+        "rate": 0.004187,
+        "trans_mat": 1 - 1 / 2.000000,
+        "temperature": 0.000000,
+        "error_timescale": 3.937542,
+    },
+    (1, 1, 1): {
+        "rate": 0.001664,
+        "trans_mat": 1 - 1 / 4.635351,
+        "temperature": 0.629294,
+        "error_timescale": 1.217550,
+    },
+    (0, 1, 1): {
+        "rate": 0.003013,
+        "trans_mat": 1 - 1 / 2.179181,
+        "temperature": 0.000000,
+        "error_timescale": 2.470230,
+    },
+    (1, 0, 1): {
+        "rate": 0.005444,
+        "trans_mat": 1 - 1 / 2.000000,
+        "temperature": 0.062365,
+        "error_timescale": 3.842287,
+    },
+    (0, 1, 0): {
+        "rate": 0.001906,
+        "trans_mat": 1 - 1 / 2.852480,
+        "temperature": 0.000000,
+        "error_timescale": 1.000000,
+    },
+    (0, 0, 0): {
+        "rate": 0.005638,
+        "trans_mat": 1 - 1 / 2.000000,
+        "temperature": 0.000000,
+        "error_timescale": 1.000000,
+    },
+    (1, 0, 0): {
+        "rate": 0.000394,
+        "trans_mat": 1 - 1 / 2.000000,
+        "temperature": 0.008065,
+        "error_timescale": 1.000000,
+    },
+}
+two_ar3.biowta_configurations_human = {
+    (0, 0, 0): "plain",
+    (0, 0, 1): "avg_error",
+    (0, 1, 0): "persistent",
+    (1, 0, 0): "soft",
+    (0, 1, 1): "persistent+avg_error",
+    (1, 1, 0): "soft+persistent",
+    (1, 0, 1): "soft+avg_error",
+    (1, 1, 1): "full",
+}
 
 # %%
-print(
-    f"Accuracy score for bottom 5% of runs: "
-    f"{np.quantile(two_ar3.result_biowta[1].trial_scores, 0.05):.3f}."
-)
+two_ar3.result_biowta_mods = {}
+for key in tqdm(two_ar3.biowta_configurations, desc="biowta cfg"):
+    two_ar3.result_biowta_mods[key] = hyper_score_ar(
+        BioWTARegressor,
+        two_ar3.dataset,
+        two_ar3.metric,
+        n_models=two_ar3.n_models,
+        n_features=two_ar3.n_features,
+        progress=tqdm,
+        monitor=["r", "weights_", "prediction_"],
+        **two_ar3.biowta_configurations[key],
+    )
+
+    crt_scores = two_ar3.result_biowta_mods[key][1].trial_scores
+    crt_median = np.median(crt_scores)
+    crt_quantile = np.quantile(crt_scores, 0.05)
+    crt_good = np.mean(crt_scores > two_ar3.good_score)
+    print(
+        f"{''.join(str(_) for _ in key)}: median={crt_median:.4f}, "
+        f"5%={crt_quantile:.4f}, "
+        f"fraction>{int(100 * two_ar3.good_score)}%={crt_good:.4f}"
+    )
+
+# %%
+for key in tqdm(
+    two_ar3.biowta_configurations, desc="biowta cfg, reconstruction progress"
+):
+    calculate_ar_identification_progress(
+        two_ar3.result_biowta_mods[key][1].history, two_ar3.dataset
+    )
 
 # %% [markdown]
-# Calculate how quickly each run's inferred weights approach the ground truth.
+# Find some "good" indices in the dataset: one that obtains an accuracy score close to a chosen threshold for "good-enough" (which we set to 85%); and one that has a similar score but also has small reconstruction error for the weights.
 
 # %%
-calculate_ar_identification_progress(two_ar3.result_biowta[1].history, two_ar3.dataset)
+two_ar3.result_biowta_chosen = two_ar3.result_biowta_mods[1, 1, 0]
+crt_mask = (
+    two_ar3.result_biowta_chosen[1].trial_scores > 0.98 * two_ar3.good_score
+) & (two_ar3.result_biowta_chosen[1].trial_scores < 1.02 * two_ar3.good_score)
+crt_idxs = crt_mask.nonzero()[0]
+
+crt_errors_norm = np.asarray(
+    [
+        np.mean(_.weight_errors_normalized_[-1])
+        for _ in two_ar3.result_biowta_chosen[1].history
+    ]
+)
+
+two_ar3.good_biowta_idx = crt_idxs[np.argmax(crt_errors_norm[crt_mask])]
+two_ar3.good_biowta_ident_idx = crt_idxs[np.argmin(crt_errors_norm[crt_mask])]
+
+# %%
+two_ar3.result_biowta_chosen[1].trial_scores[
+    [two_ar3.good_biowta_idx, two_ar3.good_biowta_ident_idx]
+]
+
+# %%
+crt_errors_norm[[two_ar3.good_biowta_idx, two_ar3.good_biowta_ident_idx]]
+
+# %%
+for key in two_ar3.biowta_configurations:
+    make_multi_trajectory_plot(
+        two_ar3.result_biowta_mods[key][1],
+        two_ar3.dataset,
+        n_traces=25,
+        highlight_idx=[two_ar3.good_biowta_idx, two_ar3.good_biowta_ident_idx],
+        sliding_kws={"window_size": 5000, "overlap_fraction": 0.8},
+        trace_kws={"alpha": 0.85, "lw": 0.75, "color": "gray"},
+        fig_kws={"figsize": (5.76, 3), "despine_kws": {"offset": 5}},
+        rug_kws={"alpha": 0.3},
+    )
+
+# %% [markdown]
+# ## Run learning and inference for autocorrelation and cepstral methods
 
 # %%
 t0 = time.time()
@@ -878,9 +972,9 @@ two_ar3.oracle_biowta = hyper_score_ar(
     n_models=two_ar3.n_models,
     n_features=two_ar3.n_features,
     rate=0,
-    trans_mat=1 - 1 / two_ar3.streak_biowta,
-    temperature=two_ar3.temperature_biowta,
-    error_timescale=two_ar3.timescale_biowta,
+    trans_mat=two_ar3.biowta_configurations[1, 1, 0]["trans_mat"],
+    temperature=two_ar3.biowta_configurations[1, 1, 0]["temperature"],
+    error_timescale=two_ar3.biowta_configurations[1, 1, 0]["error_timescale"],
     initial_weights="oracle_ar",
     progress=tqdm,
     monitor=["r", "prediction_"],
@@ -894,47 +988,33 @@ print(
 # %% [markdown]
 # ## Make plots
 
-# %% [markdown]
-# Find some "good" indices: one that yields a reasonably good score despite having not-so-good reproduction of the weights; and one that minimizes the reconstruction error for the weights.
-
-# %%
-good_score = 0.85
-good_idx = np.argmin(np.abs(two_ar3.result_biowta[1].trial_scores - good_score))
-
-late_errors_norm = np.asarray(
-    [np.mean(_.weight_errors_normalized_[-1]) for _ in two_ar3.result_biowta[1].history]
-)
-good_ident_idx = np.argmin(late_errors_norm)
-
-# %%
-# tmp_mask = late_errors_norm > 1.0
-# tmp_mask_idxs = tmp_mask.nonzero()[0]
-# tmp_idx = tmp_mask_idxs[
-#     np.argmin(np.abs(two_ar3.result_biowta[1].trial_scores[tmp_mask] - good_score))
-# ]
-
-# %%
-
 # %%
 fig = make_accuracy_plot(
-    two_ar3.result_biowta[1],
+    two_ar3.result_biowta_chosen[1],
     two_ar3.oracle_biowta[1],
     two_ar3.dataset,
-    [good_idx, good_ident_idx],
+    [two_ar3.good_biowta_idx, two_ar3.good_biowta_ident_idx],
 )
 fig.savefig(
     os.path.join(fig_path, "rolling_accuracy_2x_ar3_100trials_biowta.png"), dpi=600
 )
 
 # %%
-print(
-    f"Percentage of runs with BioWTA accuracies over {int(good_score * 100)}%: "
-    f"{int(np.mean(two_ar3.result_biowta[1].trial_scores > good_score) * 100)}%."
+crt_frac_good = np.mean(
+    two_ar3.result_biowta_chosen[1].trial_scores > two_ar3.good_score
 )
-threshold_steps = 10_000
 print(
-    f"Percentage of runs with BioWTA convergence times under {threshold_steps}: "
-    f"{int(np.mean(np.asarray(two_ar3.result_biowta[1].convergence_times) <= threshold_steps) * 100)}%."
+    f"Percentage of runs with BioWTA accuracies over {int(two_ar3.good_score * 100)}%: "
+    f"{int(crt_frac_good * 100)}%."
+)
+
+crt_frac_fast = np.mean(
+    np.asarray(two_ar3.result_biowta_chosen[1].convergence_times)
+    <= two_ar3.threshold_steps
+)
+print(
+    f"Percentage of runs with BioWTA convergence times under {two_ar3.threshold_steps}: "
+    f"{int(crt_frac_fast * 100)}%."
 )
 
 # %%
@@ -942,7 +1022,7 @@ fig = make_accuracy_plot(
     two_ar3.result_xcorr[1],
     two_ar3.oracle_biowta[1],
     two_ar3.dataset,
-    [good_idx, good_ident_idx],
+    [two_ar3.good_biowta_idx, two_ar3.good_biowta_ident_idx],
 )
 fig.savefig(
     os.path.join(fig_path, "rolling_accuracy_2x_ar3_100trials_xcorr.png"), dpi=600
@@ -950,13 +1030,13 @@ fig.savefig(
 
 # %%
 print(
-    f"Percentage of runs with xcorr accuracies over {int(good_score * 100)}%: "
-    f"{int(np.mean(two_ar3.result_xcorr[1].trial_scores > good_score) * 100)}%."
+    f"Percentage of runs with xcorr accuracies over {int(two_ar3.good_score * 100)}%: "
+    f"{int(np.mean(two_ar3.result_xcorr[1].trial_scores > two_ar3.good_score) * 100)}%."
 )
 threshold_steps = 10_000
 print(
-    f"Percentage of runs with xcorr convergence times under {threshold_steps}: "
-    f"{int(np.mean(np.asarray(two_ar3.result_xcorr[1].convergence_times) <= threshold_steps) * 100)}%."
+    f"Percentage of runs with xcorr convergence times under {two_ar3.threshold_steps}: "
+    f"{int(np.mean(np.asarray(two_ar3.result_xcorr[1].convergence_times) <= two_ar3.threshold_steps) * 100)}%."
 )
 threshold_steps_small = 1000
 print(
@@ -969,7 +1049,7 @@ fig = make_accuracy_plot(
     two_ar3.result_cepstral[1],
     two_ar3.oracle_biowta[1],
     two_ar3.dataset,
-    [good_idx, good_ident_idx],
+    [two_ar3.good_biowta_idx, two_ar3.good_biowta_ident_idx],
 )
 fig.savefig(
     os.path.join(fig_path, "rolling_accuracy_2x_ar3_100trials_cepstral.png"), dpi=600
@@ -977,13 +1057,13 @@ fig.savefig(
 
 # %%
 print(
-    f"Percentage of runs with cepstral accuracies over {int(good_score * 100)}%: "
-    f"{int(np.mean(two_ar3.result_cepstral[1].trial_scores > good_score) * 100)}%."
+    f"Percentage of runs with cepstral accuracies over {int(two_ar3.good_score * 100)}%: "
+    f"{int(np.mean(two_ar3.result_cepstral[1].trial_scores > two_ar3.good_score) * 100)}%."
 )
 threshold_steps = 10_000
 print(
-    f"Percentage of runs with cepstral convergence times under {threshold_steps}: "
-    f"{int(np.mean(np.asarray(two_ar3.result_cepstral[1].convergence_times) <= threshold_steps) * 100)}%."
+    f"Percentage of runs with cepstral convergence times under {two_ar3.threshold_steps}: "
+    f"{int(np.mean(np.asarray(two_ar3.result_cepstral[1].convergence_times) <= two_ar3.threshold_steps) * 100)}%."
 )
 threshold_steps_small = 1000
 print(
@@ -992,111 +1072,7 @@ print(
 )
 
 # %% [markdown]
-# # Run BioWTA with all combinations of improvements
-
-# %%
-two_ar3.configurations = {
-    (1, 1, 0): {
-        "rate": 0.005460,
-        "trans_mat": 1 - 1 / 6.792138,
-        "temperature": 0.961581,
-        "error_timescale": 1.000000,
-    },
-    (0, 0, 1): {
-        "rate": 0.004187,
-        "trans_mat": 1 - 1 / 2.000000,
-        "temperature": 0.000000,
-        "error_timescale": 3.937542,
-    },
-    (1, 1, 1): {
-        "rate": 0.001664,
-        "trans_mat": 1 - 1 / 4.635351,
-        "temperature": 0.629294,
-        "error_timescale": 1.217550,
-    },
-    (0, 1, 1): {
-        "rate": 0.003013,
-        "trans_mat": 1 - 1 / 2.179181,
-        "temperature": 0.000000,
-        "error_timescale": 2.470230,
-    },
-    (1, 0, 1): {
-        "rate": 0.005444,
-        "trans_mat": 1 - 1 / 2.000000,
-        "temperature": 0.062365,
-        "error_timescale": 3.842287,
-    },
-    (0, 1, 0): {
-        "rate": 0.001906,
-        "trans_mat": 1 - 1 / 2.852480,
-        "temperature": 0.000000,
-        "error_timescale": 1.000000,
-    },
-    (0, 0, 0): {
-        "rate": 0.005638,
-        "trans_mat": 1 - 1 / 2.000000,
-        "temperature": 0.000000,
-        "error_timescale": 1.000000,
-    },
-    (1, 0, 0): {
-        "rate": 0.000394,
-        "trans_mat": 1 - 1 / 2.000000,
-        "temperature": 0.008065,
-        "error_timescale": 1.000000,
-    },
-}
-two_ar3.configurations_human = {
-    (0, 0, 0): "plain",
-    (0, 0, 1): "avg_error",
-    (0, 1, 0): "persistent",
-    (1, 0, 0): "soft",
-    (0, 1, 1): "persistent+avg_error",
-    (1, 1, 0): "soft+persistent",
-    (1, 0, 1): "soft+avg_error",
-    (1, 1, 1): "full",
-}
-
-# %%
-two_ar3.result_mods = {}
-for key in tqdm(two_ar3.configurations, desc="cfg"):
-    two_ar3.result_mods[key] = hyper_score_ar(
-        BioWTARegressor,
-        two_ar3.dataset,
-        two_ar3.metric,
-        n_models=two_ar3.n_models,
-        n_features=two_ar3.n_features,
-        progress=tqdm,
-        monitor=["r", "weights_", "prediction_"],
-        **two_ar3.configurations[key],
-    )
-
-    crt_scores = two_ar3.result_mods[key][1].trial_scores
-    crt_median = np.median(crt_scores)
-    crt_quantile = np.quantile(crt_scores, 0.05)
-    crt_good = np.mean(crt_scores > good_score)
-    print(
-        f"{''.join(str(_) for _ in key)}: median={crt_median:.4f}, "
-        f"5%={crt_quantile:.4f}, "
-        f"fraction>{int(100 * good_score)}%={crt_good:.4f}"
-    )
-
-# %%
-for key in two_ar3.configurations:
-    make_multi_trajector_plot(
-        two_ar3.result_mods[key][1],
-        two_ar3.dataset,
-        n_traces=25,
-        highlight_idx=[good_idx, good_ident_idx],
-        sliding_kws={"window_size": 5000, "overlap_fraction": 0.8},
-        trace_kws={"alpha": 0.85, "lw": 0.75, "color": "gray"},
-        fig_kws={"figsize": (5.76, 3), "despine_kws": {"offset": 5}},
-        rug_kws={"alpha": 0.3},
-    )
-
-# %% [markdown]
 # # Explain variability in BioWTA accuracy scores, show effect of algorithm improvements
-
-# %%
 
 # %%
 predicted_plain_scores = [
@@ -1257,7 +1233,7 @@ with plt.style.context(paper_style):
         axs[0].plot([0.5, 1], [0.5, 1], "--", c="gray", zorder=-15)
         axs[0].scatter(
             predicted_plain_scores,
-            two_ar3.result_mods[0, 0, 0][1].trial_scores,
+            two_ar3.result_biowta_mods[0, 0, 0][1].trial_scores,
             s=6,
             c="C2",
             alpha=0.5,
@@ -1273,7 +1249,7 @@ with plt.style.context(paper_style):
         axs[1].plot([0.5, 1], [0.5, 1], "--", c="gray", zorder=-15)
         axs[1].scatter(
             predicted_plain_scores,
-            two_ar3.result_biowta[1].trial_scores,
+            two_ar3.result_biowta_chosen[1].trial_scores,
             s=6,
             c="C3",
             alpha=0.5,
@@ -1281,13 +1257,13 @@ with plt.style.context(paper_style):
 
         axs[1].set_aspect(1)
         axs[1].set_xlabel("naive score")
-        axs[1].set_ylabel("full BioWTA")
+        axs[1].set_ylabel("enh. BioWTA")
 
         axs[1].set_xlim([0.5, 1])
         axs[1].set_ylim([0.5, 1])
         
 fig.savefig(
-    os.path.join(fig_path, "plain_vs_full_biowta.pdf"),
+    os.path.join(fig_path, "plain_vs_enh_biowta.pdf"),
     transparent=True,
 )
 
@@ -1300,29 +1276,29 @@ with plt.style.context(paper_style):
         crt_x_values = []
         crt_y_values = []
         mod_sel = {
-            "plain": (0, 0, 0),
+            "no enhancements\n(plain BioWTA)": (0, 0, 0),
             "persistent": (0, 1, 0),
-            "soft\npersistent": (1, 1, 0),
-            "full": (1, 1, 1),
-            "averaging": (0, 0, 1),
+            "soft\npersistent\n(enh. BioWTA)": (1, 1, 0),
+            "soft\npersistent\naveraging": (1, 1, 1),
+            "averaging\nonly": (0, 0, 1),
         }
 
         for i, (crt_name, crt_mod) in enumerate(mod_sel.items()):
-            crt_scores = two_ar3.result_mods[crt_mod][1].trial_scores
+            crt_scores = two_ar3.result_biowta_mods[crt_mod][1].trial_scores
             crt_y_values.extend(crt_scores)
             crt_x_values.extend([i] * len(crt_scores))
 
         sns.violinplot(
             x=crt_x_values,
             y=crt_y_values,
-            palette=["C2", "gray", "gray", "C3", "gray", "gray"],
-            order=[0, 1, 2, 3, np.nan, 4],
+            palette=["C2", "gray", "C3", "gray", "gray", "gray"],
+            order=[0, 1, 2, 3, 4],
             ax=ax,
         )
 
         ax.set_ylabel("segmentation\naccuracy")
 
-        ax.set_xticks([0, 1, 2, 3, 5])
+        ax.set_xticks([0, 1, 2, 3, 4])
         ax.set_xticklabels(mod_sel.keys())
 
 fig.savefig(
@@ -1339,11 +1315,11 @@ with plt.style.context(paper_style):
             ax,
             [
                 two_ar3.result_xcorr,
-                two_ar3.result_mods[0, 0, 0],
-                two_ar3.result_biowta,
+                two_ar3.result_biowta_mods[0, 0, 0],
+                two_ar3.result_biowta_chosen,
                 two_ar3.result_cepstral,
             ],
-            ["autocorrelation", "plain BioWTA", "full BioWTA", "cepstral"],
+            ["autocorrelation", "plain BioWTA", "enhanced BioWTA", "cepstral"],
         )
 
 fig.savefig(os.path.join(fig_path, "algo_comparisons.pdf"))
@@ -1352,17 +1328,10 @@ fig.savefig(os.path.join(fig_path, "algo_comparisons.pdf"))
 # # Make table of algorithm performance
 
 # %%
-
-# %%
-# make sure we have AR error calculation for plain BioWTA
-calculate_ar_identification_progress(
-    two_ar3.result_mods[0, 0, 0][1].history, two_ar3.dataset
-)
-
 for_table = {
     "autocorr.": two_ar3.result_xcorr,
-    "plain BioWTA": two_ar3.result_mods[0, 0, 0],
-    "full BioWTA": two_ar3.result_biowta,
+    "plain BioWTA": two_ar3.result_biowta_mods[0, 0, 0],
+    "enh. BioWTA": two_ar3.result_biowta_chosen,
     "cepstral": two_ar3.result_cepstral,
 }
 measures = [
@@ -1408,15 +1377,7 @@ print(accuracy_table.to_latex(na_rep="N/A", float_format="%.2f"))
 # # Plot progression of system identification
 
 # %%
-dir(two_ar3.result_biowta[1].history[0])
-
-# %%
-np.std([2, 6])
-
-# %%
-
-# %%
-calculate_smooth_weight_errors(two_ar3.result_biowta[1])
+calculate_smooth_weight_errors(two_ar3.result_biowta_chosen[1])
 
 # %%
 with plt.style.context(paper_style):
@@ -1431,16 +1392,19 @@ with plt.style.context(paper_style):
         ax_weight_progress, ax_weight_histo, ax_weight_vs_seg = axs
 
         # draw weight error progression
-        max_weight_error = 3.0
+        max_weight_error = 2.0
         ax = ax_weight_progress
         for crt_idx, crt_roll in enumerate(
-            two_ar3.result_biowta[1].rolling_weight_errors_normalized
+            two_ar3.result_biowta_chosen[1].rolling_weight_errors_normalized
         ):
             crt_kws = {"c": "gray", "lw": 0.5, "alpha": 0.3}
-            if crt_idx == good_idx or crt_idx == good_ident_idx:
+            if (
+                crt_idx == two_ar3.good_biowta_idx
+                or crt_idx == two_ar3.good_biowta_ident_idx
+            ):
                 crt_kws["lw"] = 2.0
                 crt_kws["alpha"] = 1.0
-                crt_kws["c"] = "C0" if crt_idx == good_idx else "C1"
+                crt_kws["c"] = "C0" if crt_idx == two_ar3.good_biowta_idx else "C1"
             ax.plot(*crt_roll, **crt_kws)
         ax.set_ylim(0, max_weight_error)
         ax.set_xlabel("time")
@@ -1450,11 +1414,13 @@ with plt.style.context(paper_style):
         # draw the late error distribution
         ax = ax_weight_histo
         late_errors = [
-            _[1][-1] for _ in two_ar3.result_biowta[1].rolling_weight_errors_normalized
+            _[1][-1] for _ in two_ar3.result_biowta_chosen[1].rolling_weight_errors_normalized
         ]
         sns.kdeplot(y=late_errors, shade=True, color="gray", ax=ax)
         sns.rugplot(y=late_errors, height=0.1, alpha=0.5, color="gray", ax=ax)
-        for i, special_idx in enumerate([good_idx, good_ident_idx]):
+        for i, special_idx in enumerate(
+            [two_ar3.good_biowta_idx, two_ar3.good_biowta_ident_idx]
+        ):
             sns.rugplot(
                 y=[late_errors[special_idx]],
                 height=0.1,
@@ -1474,11 +1440,13 @@ with plt.style.context(paper_style):
             for _ in two_ar3.dataset.armas
         ]
         h = ax.scatter(
-            two_ar3.result_biowta[1].trial_scores, late_errors, s=6, c="gray", alpha=0.4
+            two_ar3.result_biowta_chosen[1].trial_scores, late_errors, s=6, c="gray", alpha=0.4
         )
-        for i, special_idx in enumerate([good_idx, good_ident_idx]):
+        for i, special_idx in enumerate(
+            [two_ar3.good_biowta_idx, two_ar3.good_biowta_ident_idx]
+        ):
             ax.scatter(
-                [two_ar3.result_biowta[1].trial_scores[special_idx]],
+                [two_ar3.result_biowta_chosen[1].trial_scores[special_idx]],
                 [late_errors[special_idx]],
                 s=12,
                 c=f"C{i}",
@@ -1489,10 +1457,10 @@ with plt.style.context(paper_style):
         ax.set_ylabel("normalized\nreconstruction error")
         ax.set_ylim(0.0, max_weight_error)
         ax.set_xlim(0.5, 1.0)
-        
+
         ax.yaxis.set_label_position("right")
-        
-    sns.despine(ax=ax_weight_vs_seg, left=True, right=False, offset=5)    
+
+    sns.despine(ax=ax_weight_vs_seg, left=True, right=False, offset=5)
     sns.despine(ax=ax_weight_histo, left=True)
 
 fig.savefig(
@@ -1502,21 +1470,25 @@ fig.savefig(
 # %%
 with plt.style.context(paper_style):
     with FigureManager(
-        1, 2, despine_kws={"left": True, "bottom": True}, figsize=(5.76, 2)
+        1, 2, despine_kws={"left": True, "bottom": True}, figsize=(5.76, 2.2)
     ) as (fig, axs):
-        crt_idxs = [good_idx, good_ident_idx]
+        crt_idxs = [two_ar3.good_biowta_idx, two_ar3.good_biowta_ident_idx]
         for i, ax in enumerate(axs):
-            ax.axhline(0, ls=":", c="gray", lw=0.5)
-            ax.axvline(0, ls=":", c="gray", lw=0.5)
+            ax.axhline(0, ls=":", c="gray", lw=0.5, xmax=1.05, clip_on=False)
+            ax.axvline(0, ls=":", c="gray", lw=0.5, ymax=1.05, clip_on=False)
 
             crt_idx = crt_idxs[i]
             crt_true = [_.calculate_poles() for _ in two_ar3.dataset.armas[crt_idx]]
             crt_inferred = [
                 Arma(_, []).calculate_poles()
-                for _ in two_ar3.result_biowta[1].history[crt_idx].weights_shuffled_[-1]
+                for _ in two_ar3.result_biowta_chosen[1]
+                .history[crt_idx]
+                .weights_shuffled_[-1]
             ]
 
-            ax.set_title(["bad reconstruction", "good reconstruction"][i], color=f"C{i}")
+            ax.set_title(
+                ["bad reconstruction", "good reconstruction"][i], color=f"C{i}"
+            )
 
             h_true = []
             h_inferred = []
@@ -1545,7 +1517,7 @@ with plt.style.context(paper_style):
                     ["model 1", "model 2"],
                     handler_map={tuple: HandlerTuple(ndivide=None)},
                     frameon=False,
-                    loc=(1.3, 0.27),
+                    loc=(1.45, 0.2),
                 )
                 ax.add_artist(other_legend)
 
@@ -1554,7 +1526,7 @@ with plt.style.context(paper_style):
                     ["ground-truth", "inferred"],
                     handler_map={tuple: HandlerTuple(ndivide=None)},
                     frameon=False,
-                    loc=(1.3, 0.55),
+                    loc=(1.45, 0.5),
                 )
 
             crt_theta = np.linspace(0, 2 * np.pi, 60)
@@ -1563,116 +1535,28 @@ with plt.style.context(paper_style):
             ax.plot(crt_x, crt_y, "k", lw=2, c=f"C{i}", clip_on=False)
 
             ax.set_aspect(1)
-            ax.set_xlim(-1, 1)
-            ax.set_ylim(-1, 1)
+            ax.set_xlim(-1.1, 1.1)
+            ax.set_ylim(-1.1, 1.1)
 
             ax.set_xticks([])
             ax.set_yticks([])
 
+            ax.annotate(
+                "Re $z$",
+                (1, 0),
+                xytext=(2, 1),
+                textcoords="offset points",
+                color="gray",
+            )
+            ax.annotate(
+                "Im $z$",
+                (0, 1),
+                xytext=(1, 2),
+                textcoords="offset points",
+                color="gray",
+            )
+            
+fig.suptitle("Poles of\nAR processes", y=0.75)
 fig.savefig(os.path.join(fig_path, "biowta_good_vs_bad_reconstruction.pdf"))
-
-# %% [markdown]
-# ## Other attempts at visualization
-
-# %%
-actual_poles = np.asarray(
-    [[_.calculate_poles() for _ in crt_sig.armas] for crt_sig in tqdm(two_ar3.dataset)]
-)
-inferred_poles = np.asarray(
-    [
-        [Arma(crt_w, []).calculate_poles() for crt_w in crt_res.weights_shuffled_[-1]]
-        for crt_res in two_ar3.result_biowta[1].history
-    ]
-)
-
-# %%
-with FigureManager() as (_, ax):
-    all_actual = np.ravel(actual_poles)
-    all_inferred = np.ravel(inferred_poles)
-
-    crt_theta = np.linspace(0, 2 * np.pi, 360)
-    ax.plot(np.cos(crt_theta), np.sin(crt_theta), "k--")
-    ax.plot(
-        two_ar3.max_pole_radius * np.cos(crt_theta),
-        two_ar3.max_pole_radius * np.sin(crt_theta),
-        "--",
-        c="gray",
-    )
-
-    ax.plot(np.real(all_actual), np.imag(all_actual), "x", ls="none", c="C0", alpha=0.6)
-    ax.plot(
-        np.real(all_inferred), np.imag(all_inferred), "x", ls="none", c="C1", alpha=0.3
-    )
-
-    crt_dashes = np.column_stack(
-        (all_actual, all_inferred, np.repeat(np.nan, len(all_actual)))
-    ).ravel()
-    ax.plot(np.real(crt_dashes), np.imag(crt_dashes), c="gray", alpha=0.2)
-
-    ax.set_aspect(1)
-
-# %%
-with FigureManager() as (_, ax):
-    crt_range = slice(-1500, None)
-    crt_sig = two_ar3.dataset[good_idx]
-    crt_n = len(crt_sig.y)
-    ax.plot(np.arange(crt_n)[crt_range], crt_sig.y[crt_range])
-    show_latent(crt_sig.usage_seq, bar_location="bottom")
-    crt_history = two_ar3.result_biowta[1].history[good_idx]
-    show_latent(np.argmax(crt_history.r, axis=1), show_vlines=False)
-
-# %%
-with FigureManager(1, 2) as (_, (ax1, ax2)):
-    crt_win_step = 1000
-    crt_win_size = 5000
-    crt_loc = np.arange(0, two_ar3.n_samples, crt_win_step)
-    for crt_idx, crt_res in enumerate(tqdm(two_ar3.result_biowta[1].history)):
-        crt_err = crt_res.weight_errors_
-        crt_err_norm = crt_res.weight_errors_normalized_
-        crt_err_smooth = np.zeros(len(crt_loc))
-        crt_err_norm_smooth = np.zeros(len(crt_loc))
-        for i, k in enumerate(crt_loc):
-            crt_err_smooth[i] = np.mean(crt_err[k : k + crt_win_size])
-            crt_err_norm_smooth[i] = np.mean(crt_err_norm[k : k + crt_win_size])
-
-        crt_kws = {"c": "C0", "lw": 0.5, "alpha": 0.8}
-        if crt_idx == good_idx:
-            crt_kws["lw"] = 2.0
-            crt_kws["alpha"] = 1.0
-            crt_kws["c"] = "C1"
-        ax1.plot(crt_loc, crt_err_smooth, **crt_kws)
-        ax2.plot(crt_loc, crt_err_norm_smooth, **crt_kws)
-    
-    ax2.set_ylim(0, 2)
-
-# %%
-with FigureManager() as (_, ax):
-    late_errors_norm = np.asarray(
-        [
-            np.mean(_.weight_errors_normalized_[-1])
-            for _ in two_ar3.result_biowta[1].history
-        ]
-    )
-    # sns.regplot(x=two_ar3.result_biowta[1].trial_scores, y=late_errors_norm, scatter_kws={"c": predicted_plain_scores}, ax=ax)
-    ar_diffs = [
-        np.linalg.norm(np.std([__.a for __ in _], axis=0))
-        for _ in two_ar3.dataset.armas
-    ]
-    h = ax.scatter(
-        two_ar3.result_biowta[1].trial_scores,
-        late_errors_norm,
-        # c=predicted_plain_scores,
-        c=ar_diffs,
-        cmap="Reds",
-        # vmin=0.5,
-        # vmax=1.0,
-        alpha=0.7,
-    )
-    colorbar(h)
-
-# %%
-with FigureManager() as (_, ax):
-    sns.kdeplot(late_errors_norm, shade=True, log_scale=True)
-    sns.rugplot(late_errors_norm)
 
 # %%
