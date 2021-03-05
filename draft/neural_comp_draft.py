@@ -18,6 +18,7 @@
 
 # %%
 # %matplotlib inline
+# %config InlineBackend.print_figure_kwargs = {'bbox_inches': None}
 import time
 import copy
 
@@ -25,9 +26,10 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+import scipy.optimize as sciopt
 
 from types import SimpleNamespace
-from typing import Tuple, Callable, Optional, Sequence, Union
+from typing import Tuple, Callable, Optional, Sequence, Union, List
 from tqdm.notebook import tqdm
 from matplotlib.legend_handler import HandlerTuple
 
@@ -49,7 +51,7 @@ from bioslds.arma_hsmm import sample_switching_models
 fig_path = os.path.join("..", "figs", "draft")
 paper_style = [
     "seaborn-paper",
-    {"font.size": 8, "axes.labelsize": 8, "xtick.labelsize": 6, "ytick.labelsize": 6,},
+    {"font.size": 8, "axes.labelsize": 8, "xtick.labelsize": 6, "ytick.labelsize": 6},
 ]
 
 
@@ -70,7 +72,7 @@ def make_multi_trajectory_plot(
     fig_kws: Optional[dict] = None,
     rug_kws: Optional[dict] = None,
     kde_kws: Optional[dict] = None,
-) -> Tuple[plt.Figure, plt.Axes]:
+) -> Tuple[plt.Figure, List[plt.Axes]]:
     # handle defaults
     if sliding_kws is None:
         sliding_kws = {}
@@ -95,12 +97,17 @@ def make_multi_trajectory_plot(
     if highlight_idx is not None and not hasattr(highlight_idx, "__len__"):
         highlight_idx = [highlight_idx]
 
-    fig_kws.setdefault("gridspec_kw", {"width_ratios": (3, 1), "height_ratios": (2, 1)})
-    fig_kws.setdefault("figsize", (6, 3))
-    with FigureManager(2, 2, **fig_kws) as (
-        fig,
-        axs,
-    ):
+    fig_kws.setdefault("figsize", (5.76, 2.2))
+    despine_kws = fig_kws.pop("despine_kws", {"offset": 5})
+
+    with plt.style.context(paper_style):
+        fig = plt.figure(**fig_kws)
+        axs = np.empty((2, 3), dtype=object)
+        axs[0, 0] = fig.add_axes([0.09, 0.62, 0.42, 0.34])
+        axs[0, 1] = fig.add_axes([0.52, 0.62, 0.07, 0.34])
+        axs[0, 2] = fig.add_axes([0.69, 0.22, 0.29, 0.74])
+        axs[1, 0] = fig.add_axes([0.09, 0.22, 0.42, 0.23])
+
         # calculate rolling accuracy scores, unless they exist already
         if not hasattr(results, "rolling_scores"):
             results.rolling_scores = []
@@ -119,11 +126,6 @@ def make_multi_trajectory_plot(
         for idx, crt_rolling in enumerate(results.rolling_scores):
             crt_threshold = convergence_threshold * results.trial_scores[idx]
             crt_mask = crt_rolling[1] >= crt_threshold
-            # find the index starting at which all scores are above threshold
-            # if np.all(crt_mask):
-            #     crt_conv_idx = 0
-            # else:
-            #     crt_conv_idx = len(crt_mask) - np.nonzero(~crt_mask[::-1])[0][0]
 
             # find the first index where the score goes above threshold
             if not np.any(crt_mask):
@@ -147,13 +149,6 @@ def make_multi_trajectory_plot(
         for idx, crt_rolling in enumerate(results.rolling_scores):
             if idx in trace_idxs:
                 axs[0, 0].plot(*crt_rolling, **trace_kws)
-                # crt_conv_idx = results.convergence_idxs[idx]
-                # axs[0, 0].plot(
-                #     [crt_rolling[0][crt_conv_idx]],
-                #     [crt_rolling[1][crt_conv_idx]],
-                #     c="C1",
-                #     marker=".",
-                # )
 
         if highlight_idx is not None:
             # using different color for highlight
@@ -176,26 +171,24 @@ def make_multi_trajectory_plot(
                 trace_kws["c"] = f"C{h_idx}"
                 axs[0, 0].plot(*results.rolling_scores[crt_idx], **trace_kws)
 
-            # highlight_color = trace_kws.get("color", trace_kws.get("c"))
-        # else:
-        # highlight_color = trace_color
-
         axs[0, 0].set_xlim(0, np.max(crt_rolling[0]))
         axs[0, 0].set_ylim(0.5, 1.0)
-        axs[0, 0].set_xlabel("time")
-        axs[0, 0].set_ylabel("accuracy")
+        axs[0, 0].set_xlabel("time step")
+        axs[0, 0].set_ylabel("seg. score")
+        axs[0, 0].set_xticks([])
 
         # draw the distribution of final accuracy scores
         kde_kws.setdefault("shade", True)
         kde_kws.setdefault("color", trace_color)
         sns.kdeplot(y=results.trial_scores, ax=axs[0, 1], **kde_kws)
 
-        rug_kws.setdefault("height", 0.05)
-        rug_kws.setdefault("lw", 2)
+        rug_kws.setdefault("height", 0.1)
+        rug_kws.setdefault("lw", 0.5)
         sns.rugplot(y=results.trial_scores, color=trace_color, ax=axs[0, 1], **rug_kws)
         if highlight_idx is not None:
             highlight_rug_kws = copy.copy(rug_kws)
             highlight_rug_kws["alpha"] = 1.0
+            highlight_rug_kws["lw"] = 2 * rug_kws["lw"]
             for h_idx, crt_idx in enumerate(highlight_idx):
                 sns.rugplot(
                     y=[results.trial_scores[crt_idx]],
@@ -205,18 +198,18 @@ def make_multi_trajectory_plot(
                 )
 
         axs[0, 1].set_ylim(0.5, 1.0)
+        axs[0, 1].set_xticks([])
         axs[0, 1].set_xlabel("pdf")
 
         # draw the distribution of convergence times
         sns.kdeplot(x=results.convergence_times, ax=axs[1, 0], **kde_kws)
 
-        rug_kws["height"] = 2 * rug_kws["height"]
-        sns.rugplot(
-            x=results.convergence_times, color=trace_color, ax=axs[1, 0], **rug_kws
-        )
+        rug_kws["height"] = 0.75 * rug_kws["height"]
+        sns.rugplot(x=results.convergence_times, color=trace_color, ax=axs[1, 0], **rug_kws)
         if highlight_idx is not None:
             highlight_rug_kws = copy.copy(rug_kws)
             highlight_rug_kws["alpha"] = 1.0
+            highlight_rug_kws["lw"] = 2 * rug_kws["lw"]
             for h_idx, crt_idx in enumerate(highlight_idx):
                 sns.rugplot(
                     x=[results.convergence_times[crt_idx]],
@@ -226,12 +219,87 @@ def make_multi_trajectory_plot(
                 )
 
         axs[1, 0].set_xlim(0, np.max(crt_rolling[0]))
+        # axs[1, 0].set_xlabel("time step")
         axs[1, 0].set_xlabel("convergence time")
         axs[1, 0].set_ylabel("pdf")
+        # axs[1, 0].annotate(
+        #     "convergence time",
+        #     xy=(0.5, 0.98),
+        #     xycoords="axes fraction",
+        #     horizontalalignment="center",
+        #     verticalalignment="top",
+        #     fontsize=plt.rcParams["axes.titlesize"],
+        #     fontweight=plt.rcParams["axes.titleweight"],
+        # )
+        axs[1, 0].set_yticks([])
+        
+        axs[1, 0].patch.set_alpha(0)
 
-    sns.despine(left=True, ax=axs[0, 1])
-    axs[0, 1].set_yticks([])
-    axs[1, 1].set_visible(False)
+        axs[0, 0].set_xticks([])
+        axs[0, 1].set_yticks([])
+        axs[0, 2].set_visible(False)
+
+        sns.despine(ax=axs[0, 0], **despine_kws)
+        sns.despine(left=True, ax=axs[0, 1], **despine_kws)
+        sns.despine(ax=axs[0, 2], **despine_kws)
+        sns.despine(ax=axs[1, 0], **despine_kws)
+
+    return fig, axs
+
+
+# %%
+def make_accuracy_plot(
+    results, oracle, dataset, special_idxs
+) -> Tuple[plt.Figure, List[plt.Axes]]:
+    with plt.style.context(paper_style):
+        fig, axs = make_multi_trajectory_plot(
+            results,
+            dataset,
+            n_traces=25,
+            highlight_idx=special_idxs,
+            sliding_kws={"window_size": 5000, "overlap_fraction": 0.8},
+            trace_kws={"alpha": 0.85, "lw": 0.75, "color": "gray"},
+            rug_kws={"alpha": 0.3},
+        )
+        axs[0, 0].set_xticks(np.arange(0, 200_000, 50_000))
+        axs[1, 0].set_xticks(np.arange(0, 200_000, 50_000))
+        
+        axs[0, 0].set_yticks([0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
+
+        scatter_ax = axs[0, 2]
+        scatter_ax.set_visible(True)
+        scatter_ax.plot([0.5, 1], [0.5, 1], "k--", lw=0.5, alpha=0.5)
+        scatter_ax.scatter(
+            oracle.trial_scores, results.trial_scores, c="gray", s=6, alpha=0.5,
+        )
+        for i, special_idx in enumerate(special_idxs):
+            scatter_ax.scatter(
+                [oracle.trial_scores[special_idx]],
+                [results.trial_scores[special_idx]],
+                s=12,
+                c=f"C{i}",
+                alpha=1.0,
+            )
+
+        scatter_ax.set_xlim(0.5, 1.0)
+        scatter_ax.set_ylim(0.5, 1.0)
+        scatter_ax.set_aspect(1.0)
+
+        scatter_ax.set_xlabel("fixed weights")
+        scatter_ax.set_ylabel("learned weights")
+        
+        scatter_ax.set_xticks([0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
+        scatter_ax.set_yticks([0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
+
+        scatter_ax.annotate(
+            "segmentation\nscore",
+            xy=(0.1, 1.00),
+            xycoords="axes fraction",
+            horizontalalignment="left",
+            verticalalignment="top",
+            fontsize=plt.rcParams["axes.titlesize"],
+            fontweight=plt.rcParams["axes.titleweight"],
+        )
 
     return fig, axs
 
@@ -243,7 +311,10 @@ def make_accuracy_comparison_diagram(
     result_names: Sequence,
     dash_kws: Optional[dict] = None,
     line_kws: Optional[dict] = None,
+    color_cycle: Optional[Sequence] = None,
+    score_type: str = "segmentation",
 ):
+    """ score_type can be "segmentation" or "weight". """
     # handle defaults
     if dash_kws is None:
         dash_kws = {}
@@ -252,7 +323,15 @@ def make_accuracy_comparison_diagram(
 
     prev_scores = None
     for i, crt_res in enumerate(results):
-        crt_scores = crt_res[1].trial_scores
+        if score_type == "segmentation":
+            crt_scores = crt_res[1].trial_scores
+        elif score_type == "weight":
+            crt_scores = [
+                np.linalg.norm(_.weight_errors_normalized_[-1])
+                for _ in crt_res[1].history
+            ]
+        else:
+            raise ValueError("Unknown score_type.")
 
         n = len(crt_scores)
         crt_kws = copy.copy(dash_kws)
@@ -264,7 +343,11 @@ def make_accuracy_comparison_diagram(
             crt_kws["mew"] = 2
         crt_kws.setdefault("marker", "_")
         crt_kws.setdefault("alpha", 0.5)
-        ax.plot(i * np.ones(n), crt_scores, c=f"C{i}", **crt_kws)
+        if color_cycle is None:
+            crt_color = f"C{i}"
+        else:
+            crt_color = color_cycle[i % len(results)]
+        ax.plot(i * np.ones(n), crt_scores, c=crt_color, **crt_kws)
 
         if prev_scores is not None:
             crt_kws = copy.copy(line_kws)
@@ -285,15 +368,29 @@ def make_accuracy_comparison_diagram(
     ax.set_xticks(np.arange(len(results)))
     ax.set_xticklabels(result_names)
 
-    ax.set_ylim(0.5, 1)
-    ax.set_ylabel("accuracy score")
+    if score_type == "segmentation":
+        ax.set_ylim(0.5, 1)
+        ax.set_ylabel("segmentation score")
+    else:
+        ax.set_ylabel("weight reconstruction error")
 
 
 # %%
 def calculate_ar_identification_progress(
-    results: Sequence, dataset: RandomArmaDataset, test_fraction: float = 0.2
+    results: Sequence,
+    dataset: RandomArmaDataset,
+    test_fraction: float = 0.2,
+    mapping_policy: str = "weight",
 ):
+    """ Mapping policy can be "segmentation" or "weight". """
     for crt_res, crt_sig in zip(tqdm(results), dataset):
+        # collect ground-truth weights
+        ground_weights = np.array([_.a for _ in crt_sig.armas])
+        p = len(ground_weights[0])
+        ground_diff = np.linalg.norm(np.std(ground_weights, axis=0)) / np.sqrt(
+            p / len(ground_weights)
+        )
+
         # find the mapping from predicted to ground-truth labels
         inferred_usage = np.argmax(crt_res.r, axis=1)
         crt_n = int(test_fraction * len(crt_res.r))
@@ -302,12 +399,35 @@ def calculate_ar_identification_progress(
         )
 
         # it's more convenient to use ground-truth to predicted mapping
-        p = len(assignment0)
-        assignment = np.empty(p, dtype=int)
-        assignment[assignment0] = np.arange(p)
+        assignment_segmentation = np.empty(len(assignment0), dtype=int)
+        assignment_segmentation[assignment0] = np.arange(len(assignment0))
+
+        crt_res.best_assignment_segmentation = assignment_segmentation
+
+        # find out which inferred weights are closest to which ground-truth ones
+        n_gnd = len(ground_weights)
+        n_inf = np.shape(crt_res.weights_)[1]
+        error_matrix = np.zeros((n_gnd, n_inf))
+        for i in range(n_gnd):
+            crt_gnd = ground_weights[i]
+            for j in range(n_inf):
+                crt_inf = crt_res.weights_[-1, j]
+                crt_diff_norm = np.linalg.norm(crt_inf - crt_gnd) / ground_diff
+                error_matrix[i, j] = crt_diff_norm
+        _, assignment_weight = sciopt.linear_sum_assignment(error_matrix)
+
+        crt_res.best_assignment_weight = assignment_weight
+
+        if mapping_policy == "segmentation":
+            assignment = assignment_segmentation
+        elif mapping_policy == "weight":
+            assignment = assignment_weight
+        else:
+            raise ValueError("Invalid mapping_policy.")
+
+        crt_res.best_assignment = assignment
 
         # calculate norm of coefficient differences
-        ground_weights = np.array([_.a for _ in crt_sig.armas])
         weights = crt_res.weights_[:, assignment, :]
         crt_res.weights_shuffled_ = weights
 
@@ -317,9 +437,8 @@ def calculate_ar_identification_progress(
         crt_res.weight_errors_ = norms
 
         # normalize weight errors by difference between ARs
-        ground_diff = np.linalg.norm(np.std(ground_weights, axis=0)) / np.sqrt(p)
         crt_res.weight_errors_normalized_ = norms / ground_diff
-        
+
         # calculate how different the two models are
         model_diff = np.linalg.norm(np.std(weights, axis=1), axis=1) / np.sqrt(p)
         model_diff_norm = model_diff / ground_diff
@@ -364,7 +483,7 @@ def show_weight_progression(
             ax.axhline(crt_true[k], c=f"C{k}", ls=":", lw=2, label=f"true $w_{k + 1}$")
             ylims.append(ax.get_ylim())
 
-        ax.set_xlabel("time")
+        ax.set_xlabel("time step")
         ax.set_ylabel("AR coefficients")
 
         # ax.legend(ncol=3, frameon=False, fontsize=6)
@@ -531,50 +650,6 @@ def get_accuracy_metrics(
 
 
 # %%
-def make_accuracy_plot(results, oracle, dataset, special_idxs) -> plt.Figure:
-    with plt.style.context(paper_style):
-        fig, axs = make_multi_trajectory_plot(
-            results,
-            dataset,
-            n_traces=25,
-            highlight_idx=special_idxs,
-            sliding_kws={"window_size": 5000, "overlap_fraction": 0.8},
-            trace_kws={"alpha": 0.85, "lw": 0.75, "color": "gray"},
-            fig_kws={"figsize": (5.76, 3), "despine_kws": {"offset": 5}},
-            rug_kws={"alpha": 0.3},
-        )
-        axs[0, 0].set_xticks(np.arange(0, 200_000, 50_000))
-        axs[1, 0].set_xticks(np.arange(0, 200_000, 50_000))
-
-        axs[1, 1].set_visible(True)
-        axs[1, 1].plot([0.5, 1], [0.5, 1], "k--", lw=0.5, alpha=0.5)
-        axs[1, 1].scatter(
-            oracle.trial_scores,
-            results.trial_scores,
-            c="gray",
-            s=6,
-            alpha=0.5,
-        )
-        for i, special_idx in enumerate(special_idxs):
-            axs[1, 1].scatter(
-                [oracle.trial_scores[special_idx]],
-                [results.trial_scores[special_idx]],
-                s=12,
-                c=f"C{i}",
-                alpha=1.0,
-            )
-            
-        axs[1, 1].set_xlim(0.5, 1.0)
-        axs[1, 1].set_ylim(0.5, 1.0)
-        axs[1, 1].set_aspect(1.0)
-
-        axs[1, 1].set_xlabel("oracle")
-        axs[1, 1].set_ylabel("actual")
-    
-    return fig
-
-
-# %%
 def predict_plain_score(armas: Sequence, sigma: float = 1) -> float:
     delta = np.linalg.norm(armas[1].a - armas[0].a)
     return 0.5 + np.arctan(delta * sigma * np.sqrt(np.pi / 8)) / np.pi
@@ -634,7 +709,7 @@ with plt.style.context(paper_style):
         ax0.legend(frameon=False)
 
         ax1.plot(problem_setup.sig)
-        ax1.set_xlabel("time")
+        ax1.set_xlabel("time step")
 
         ax1.set_xlim(0, problem_setup.n_samples)
         ax1.set_yticks([])
@@ -685,7 +760,7 @@ with plt.style.context(paper_style):
 
         show_latent(problem_setup_v2.usage_seq, ax=ax0)
 
-        # ax0.set_xlabel("time")
+        # ax0.set_xlabel("time step")
         ax0.set_ylabel("signal")
 
         ax0.set_xlim(0, problem_setup_v2.n_samples)
@@ -731,7 +806,7 @@ with plt.style.context(paper_style):
         ax1.legend(frameon=False, loc=(0.25, 0.27), fontsize=6, ncol=3)
         ax1.set_ylim(0, 1)
 
-        ax1.set_xlabel("time")
+        ax1.set_xlabel("time step")
         ax1.set_ylabel("inference")
 
         show_latent(problem_setup_v2.usage_seq, show_bars=False, ax=ax1)
@@ -898,14 +973,13 @@ crt_errors_norm = np.asarray(
 
 two_ar3.good_biowta_idx = crt_idxs[np.argmax(crt_errors_norm[crt_mask])]
 two_ar3.good_biowta_ident_idx = crt_idxs[np.argmin(crt_errors_norm[crt_mask])]
+two_ar3.good_idxs = [two_ar3.good_biowta_ident_idx, two_ar3.good_biowta_idx]
 
 # %%
-two_ar3.result_biowta_chosen[1].trial_scores[
-    [two_ar3.good_biowta_idx, two_ar3.good_biowta_ident_idx]
-]
+two_ar3.result_biowta_chosen[1].trial_scores[two_ar3.good_idxs]
 
 # %%
-crt_errors_norm[[two_ar3.good_biowta_idx, two_ar3.good_biowta_ident_idx]]
+crt_errors_norm[two_ar3.good_idxs]
 
 # %%
 for key in two_ar3.biowta_configurations:
@@ -913,10 +987,9 @@ for key in two_ar3.biowta_configurations:
         two_ar3.result_biowta_mods[key][1],
         two_ar3.dataset,
         n_traces=25,
-        highlight_idx=[two_ar3.good_biowta_idx, two_ar3.good_biowta_ident_idx],
+        highlight_idx=two_ar3.good_idxs,
         sliding_kws={"window_size": 5000, "overlap_fraction": 0.8},
         trace_kws={"alpha": 0.85, "lw": 0.75, "color": "gray"},
-        fig_kws={"figsize": (5.76, 3), "despine_kws": {"offset": 5}},
         rug_kws={"alpha": 0.3},
     )
 
@@ -989,12 +1062,15 @@ print(
 # ## Make plots
 
 # %%
-fig = make_accuracy_plot(
+fig, axs = make_accuracy_plot(
     two_ar3.result_biowta_chosen[1],
     two_ar3.oracle_biowta[1],
     two_ar3.dataset,
-    [two_ar3.good_biowta_idx, two_ar3.good_biowta_ident_idx],
+    two_ar3.good_idxs,
 )
+axs[0, 2].set_xlabel("enh. BioWTA oracle")
+axs[0, 2].set_ylabel("enh. BioWTA")
+
 fig.savefig(
     os.path.join(fig_path, "rolling_accuracy_2x_ar3_100trials_biowta.png"), dpi=600
 )
@@ -1018,12 +1094,15 @@ print(
 )
 
 # %%
-fig = make_accuracy_plot(
+fig, axs = make_accuracy_plot(
     two_ar3.result_xcorr[1],
     two_ar3.oracle_biowta[1],
     two_ar3.dataset,
-    [two_ar3.good_biowta_idx, two_ar3.good_biowta_ident_idx],
+    two_ar3.good_idxs,
 )
+axs[0, 2].set_xlabel("enh. BioWTA oracle")
+axs[0, 2].set_ylabel("autocorrelation")
+
 fig.savefig(
     os.path.join(fig_path, "rolling_accuracy_2x_ar3_100trials_xcorr.png"), dpi=600
 )
@@ -1045,12 +1124,15 @@ print(
 )
 
 # %%
-fig = make_accuracy_plot(
+fig, axs = make_accuracy_plot(
     two_ar3.result_cepstral[1],
     two_ar3.oracle_biowta[1],
     two_ar3.dataset,
-    [two_ar3.good_biowta_idx, two_ar3.good_biowta_ident_idx],
+    two_ar3.good_idxs,
 )
+axs[0, 2].set_xlabel("enh. BioWTA oracle")
+axs[0, 2].set_ylabel("cepstral oracle")
+
 fig.savefig(
     os.path.join(fig_path, "rolling_accuracy_2x_ar3_100trials_cepstral.png"), dpi=600
 )
@@ -1113,13 +1195,22 @@ with plt.style.context(paper_style):
 
         crt_p_range = (-1.5, 1.5)
         axs[0].set_ylim(*crt_p_range)
-        axs[0].set_xlabel("time")
+        axs[0].set_xlabel("time step")
         axs[0].set_ylabel("signal $y(t)$")
 
         axs[0].set_xticks([0, len(crt_samples)])
         axs[0].set_xticklabels([0, "$\\tau$"])
 
         show_latent(crt_usage, ax=axs[0])
+
+        axs[0].annotate(
+            "ground truth: model 1",
+            (0.5, axs[0].get_ylim()[1] - 0.03),
+            color="w",
+            verticalalignment="top",
+            fontsize=6,
+            fontweight="bold",
+        )
 
         crt_ps = np.linspace(*crt_p_range, 100)
         crt_dist = (
@@ -1240,7 +1331,7 @@ with plt.style.context(paper_style):
         )
 
         axs[0].set_aspect(1)
-        axs[0].set_xlabel("naive score")
+        axs[0].set_xlabel("expectation")
         axs[0].set_ylabel("plain BioWTA")
 
         axs[0].set_xlim([0.5, 1])
@@ -1256,7 +1347,7 @@ with plt.style.context(paper_style):
         )
 
         axs[1].set_aspect(1)
-        axs[1].set_xlabel("naive score")
+        axs[1].set_xlabel("expectation")
         axs[1].set_ylabel("enh. BioWTA")
 
         axs[1].set_xlim([0.5, 1])
@@ -1321,7 +1412,9 @@ with plt.style.context(paper_style):
                 two_ar3.result_cepstral,
             ],
             ["autocorrelation", "plain BioWTA", "enhanced BioWTA", "cepstral"],
+            color_cycle=["C0", "C2", "C3", "C1"],
         )
+    ax.tick_params(axis='x', labelsize=8)
 
 fig.savefig(os.path.join(fig_path, "algo_comparisons.pdf"))
 
@@ -1335,18 +1428,31 @@ for_table = {
     "enh. BioWTA": two_ar3.result_biowta_chosen,
     "cepstral": two_ar3.result_cepstral,
 }
+# measures = [
+#     # "mean_seg_acc",
+#     "median_seg_acc",
+#     "seg_good_frac",
+#     "bottom_seg_acc",
+#     "median_weight_error",
+#     # "mean_weight_error",
+#     # "bottom_weight_error",
+#     # "mean_convergence_time",
+#     "median_convergence_time",
+#     # "bottom_convergence_time",
+# ]
 measures = [
-    # "mean_seg_acc",
-    "median_seg_acc",
+    "mean_seg_acc",
+    # "median_seg_acc",
     "seg_good_frac",
     "bottom_seg_acc",
-    "median_weight_error",
-    # "mean_weight_error",
+    # "median_weight_error",
+    "mean_weight_error",
     # "bottom_weight_error",
     "mean_convergence_time",
     # "median_convergence_time",
     # "bottom_convergence_time",
 ]
+
 accuracy_results = {_: [] for _ in measures}
 accuracy_index = []
 for crt_name, crt_results in for_table.items():
@@ -1358,11 +1464,14 @@ for crt_name, crt_results in for_table.items():
 accuracy_table0 = pd.DataFrame(accuracy_results, index=accuracy_index)
 accuracy_table0.rename(
     columns={
-        "median_seg_acc": "Median seg. accuracy",
+        "median_seg_acc": "Median seg. score",
+        "mean_seg_acc": "Mean segmentation score",
         "seg_good_frac": "Fraction well-segmented",
-        "bottom_seg_acc": "Seg. accuracy of bottom 5%",
+        "bottom_seg_acc": "Seg. score of bottom 5%",
         "median_weight_error": "Median weight error",
+        "mean_weight_error": "Mean weight error",
         "mean_convergence_time": "Mean convergence time",
+        "median_convergence_time": "Median convergence time",
     },
     inplace=True,
 )
@@ -1381,6 +1490,16 @@ print(accuracy_table.to_latex(na_rep="N/A", float_format="%.2f"))
 calculate_smooth_weight_errors(two_ar3.result_biowta_chosen[1])
 
 # %%
+# for how many runs does the best ground-truth-to-inferred assignment depend on
+# whether it's judged by segmentation vs. weight accuracy?
+np.sum(
+    [
+        np.any(_.best_assignment_segmentation != _.best_assignment_weight)
+        for _ in two_ar3.result_biowta_chosen[1].history
+    ]
+)
+
+# %%
 with plt.style.context(paper_style):
     with FigureManager(
         1,
@@ -1393,35 +1512,31 @@ with plt.style.context(paper_style):
         ax_weight_progress, ax_weight_histo, ax_weight_vs_seg = axs
 
         # draw weight error progression
-        max_weight_error = 2.0
+        max_weight_error = 1.4
         ax = ax_weight_progress
         for crt_idx, crt_roll in enumerate(
             two_ar3.result_biowta_chosen[1].rolling_weight_errors_normalized
         ):
             crt_kws = {"c": "gray", "lw": 0.5, "alpha": 0.3}
-            if (
-                crt_idx == two_ar3.good_biowta_idx
-                or crt_idx == two_ar3.good_biowta_ident_idx
-            ):
+            if crt_idx in two_ar3.good_idxs:
                 crt_kws["lw"] = 2.0
                 crt_kws["alpha"] = 1.0
-                crt_kws["c"] = "C0" if crt_idx == two_ar3.good_biowta_idx else "C1"
+                crt_kws["c"] = f"C{two_ar3.good_idxs.index(crt_idx)}"
             ax.plot(*crt_roll, **crt_kws)
         ax.set_ylim(0, max_weight_error)
-        ax.set_xlabel("time")
+        ax.set_xlabel("time step")
         ax.set_ylabel("normalized\nreconstruction error")
         ax.set_xlim(0, two_ar3.n_samples)
 
         # draw the late error distribution
         ax = ax_weight_histo
         late_errors = [
-            _[1][-1] for _ in two_ar3.result_biowta_chosen[1].rolling_weight_errors_normalized
+            _[1][-1]
+            for _ in two_ar3.result_biowta_chosen[1].rolling_weight_errors_normalized
         ]
         sns.kdeplot(y=late_errors, shade=True, color="gray", ax=ax)
         sns.rugplot(y=late_errors, height=0.1, alpha=0.5, color="gray", ax=ax)
-        for i, special_idx in enumerate(
-            [two_ar3.good_biowta_idx, two_ar3.good_biowta_ident_idx]
-        ):
+        for i, special_idx in enumerate(two_ar3.good_idxs):
             sns.rugplot(
                 y=[late_errors[special_idx]],
                 height=0.1,
@@ -1441,11 +1556,13 @@ with plt.style.context(paper_style):
             for _ in two_ar3.dataset.armas
         ]
         h = ax.scatter(
-            two_ar3.result_biowta_chosen[1].trial_scores, late_errors, s=6, c="gray", alpha=0.4
+            two_ar3.result_biowta_chosen[1].trial_scores,
+            late_errors,
+            s=6,
+            c="gray",
+            alpha=0.4,
         )
-        for i, special_idx in enumerate(
-            [two_ar3.good_biowta_idx, two_ar3.good_biowta_ident_idx]
-        ):
+        for i, special_idx in enumerate(two_ar3.good_idxs):
             ax.scatter(
                 [two_ar3.result_biowta_chosen[1].trial_scores[special_idx]],
                 [late_errors[special_idx]],
@@ -1470,95 +1587,206 @@ fig.savefig(
 
 # %%
 with plt.style.context(paper_style):
-    with FigureManager(
-        1, 2, despine_kws={"left": True, "bottom": True}, figsize=(5.76, 2.2)
-    ) as (fig, axs):
-        crt_idxs = [two_ar3.good_biowta_idx, two_ar3.good_biowta_ident_idx]
-        for i, ax in enumerate(axs):
-            ax.axhline(0, ls=":", c="gray", lw=0.5, xmax=1.05, clip_on=False)
-            ax.axvline(0, ls=":", c="gray", lw=0.5, ymax=1.05, clip_on=False)
+    fig = plt.figure(figsize=(5.76, 2.2))
+    axs = np.empty(2, dtype=object)
+    axs[0] = fig.add_axes([0.0, 0.15, 0.4, 0.7])
+    axs[1] = fig.add_axes([0.6, 0.15, 0.4, 0.7])
+    crt_idxs = two_ar3.good_idxs
+    for i, ax in enumerate(axs):
+        ax.axhline(0, ls=":", c="gray", lw=0.5, xmax=1.05, clip_on=False)
+        ax.axvline(0, ls=":", c="gray", lw=0.5, ymax=1.05, clip_on=False)
 
-            crt_idx = crt_idxs[i]
-            crt_true = [_.calculate_poles() for _ in two_ar3.dataset.armas[crt_idx]]
-            crt_inferred = [
-                Arma(_, []).calculate_poles()
-                for _ in two_ar3.result_biowta_chosen[1]
-                .history[crt_idx]
-                .weights_shuffled_[-1]
-            ]
+        crt_idx = crt_idxs[i]
+        crt_true = [_.calculate_poles() for _ in two_ar3.dataset.armas[crt_idx]]
+        crt_inferred = [
+            Arma(_, []).calculate_poles()
+            for _ in two_ar3.result_biowta_chosen[1]
+            .history[crt_idx]
+            .weights_shuffled_[-1]
+        ]
 
-            ax.set_title(
-                ["bad reconstruction", "good reconstruction"][i], color=f"C{i}"
+        ax.set_title(["good reconstruction", "bad reconstruction"][i], color=f"C{i}")
+
+        h_true = []
+        h_inferred = []
+        for k in range(len(crt_true)):
+            (crt_h_true,) = ax.plot(
+                np.real(crt_true[k]),
+                np.imag(crt_true[k]),
+                c=f"C{2 + k}",
+                marker="^v"[k],
+                markersize=7,
+                linestyle="none",
+                alpha=0.3,
             )
-
-            h_true = []
-            h_inferred = []
-            for k in range(len(crt_true)):
-                (crt_h_true,) = ax.plot(
-                    np.real(crt_true[k]),
-                    np.imag(crt_true[k]),
-                    c=f"C{2 + k}",
-                    marker="o",
-                    linestyle="none",
-                    alpha=0.3,
-                )
-                (crt_h_inferred,) = ax.plot(
-                    np.real(crt_inferred[k]),
-                    np.imag(crt_inferred[k]),
-                    c=f"C{2 + k}",
-                    marker=".",
-                    linestyle="none",
-                )
-                h_true.append(crt_h_true)
-                h_inferred.append(crt_h_inferred)
-
-            if i == 0:
-                other_legend = ax.legend(
-                    [(h_true[0], h_inferred[0]), (h_true[1], h_inferred[1])],
-                    ["model 1", "model 2"],
-                    handler_map={tuple: HandlerTuple(ndivide=None)},
-                    frameon=False,
-                    loc=(1.45, 0.2),
-                )
-                ax.add_artist(other_legend)
-
-                ax.legend(
-                    [tuple(h_true), tuple(h_inferred)],
-                    ["ground-truth", "inferred"],
-                    handler_map={tuple: HandlerTuple(ndivide=None)},
-                    frameon=False,
-                    loc=(1.45, 0.5),
-                )
-
-            crt_theta = np.linspace(0, 2 * np.pi, 60)
-            crt_x = np.cos(crt_theta)
-            crt_y = np.sin(crt_theta)
-            ax.plot(crt_x, crt_y, "k", lw=2, c=f"C{i}", clip_on=False)
-
-            ax.set_aspect(1)
-            ax.set_xlim(-1.1, 1.1)
-            ax.set_ylim(-1.1, 1.1)
-
-            ax.set_xticks([])
-            ax.set_yticks([])
-
-            ax.annotate(
-                "Re $z$",
-                (1, 0),
-                xytext=(2, 1),
-                textcoords="offset points",
-                color="gray",
+            (crt_h_inferred,) = ax.plot(
+                np.real(crt_inferred[k]),
+                np.imag(crt_inferred[k]),
+                c=f"C{2 + k}",
+                marker="^v"[k],
+                markersize=3,
+                linestyle="none",
             )
-            ax.annotate(
-                "Im $z$",
-                (0, 1),
-                xytext=(1, 2),
-                textcoords="offset points",
-                color="gray",
-            )
-            
-fig.suptitle("Poles of\nAR processes", y=0.75)
+            h_true.append(crt_h_true)
+            h_inferred.append(crt_h_inferred)
+
+        crt_theta = np.linspace(0, 2 * np.pi, 60)
+        crt_x = np.cos(crt_theta)
+        crt_y = np.sin(crt_theta)
+        ax.plot(crt_x, crt_y, "k", lw=2, c=f"C{i}", clip_on=False)
+
+        ax.set_aspect(1)
+        ax.set_xlim(-1.1, 1.1)
+        ax.set_ylim(-1.1, 1.1)
+
+        ax.set_xticks([])
+        ax.set_yticks([])
+
+        ax.annotate(
+            "Re $z$", (1, 0), xytext=(2, 1), textcoords="offset points", color="gray",
+        )
+        ax.annotate(
+            "Im $z$", (0, 1), xytext=(1, 2), textcoords="offset points", color="gray",
+        )
+
+        ax.annotate(
+            "unit\ncircle",
+            (np.sqrt(2) / 2, -np.sqrt(2) / 2),
+            xytext=(3, 0),
+            textcoords="offset points",
+            verticalalignment="top",
+            color=f"C{i}",
+        )
+
+    # draw the legend
+    legend_ax = fig.add_axes([0.38, 0.41, 0.24, 0.21])
+    legend_ax.set_xticks([])
+    legend_ax.set_yticks([])
+
+    legend_ax.set_xlim(0, 1)
+    legend_ax.set_ylim(0, 1)
+
+    label_xs = [0.52, 0.82]
+    label_ys = [0.48, 0.17]
+    top_y = max(label_ys) + 0.32
+
+    for i, crt_y in enumerate(label_ys):
+        legend_ax.annotate(
+            f"model {i + 1}",
+            (0.35, crt_y),
+            verticalalignment="center",
+            horizontalalignment="right",
+        )
+
+    for i, crt_x in enumerate(label_xs):
+        crt_name = ["true", "inferred"][i]
+        legend_ax.annotate(
+            crt_name,
+            (crt_x, top_y),
+            verticalalignment="center",
+            horizontalalignment="center",
+        )
+
+    for k, crt_y in enumerate(label_ys):
+        legend_ax.plot(
+            [label_xs[0]],
+            [crt_y],
+            c=f"C{2 + k}",
+            marker="^v"[k],
+            markersize=7,
+            linestyle="none",
+            alpha=0.3,
+        )
+        legend_ax.plot(
+            [label_xs[1]],
+            [crt_y],
+            c=f"C{2 + k}",
+            marker="^v"[k],
+            markersize=3,
+            linestyle="none",
+        )
+        
+    legend_ax.plot([0, 1], [1, 1], c="gray", lw=1, clip_on=False)
+    legend_ax.plot([label_xs[0] - 0.5, label_xs[1] + 0.16], 2 * [top_y - 0.14], c="gray", lw=0.5)
+    legend_ax.plot([0, 1], [0, 0], c="gray", lw=1, clip_on=False)
+
+for ax in axs:
+    sns.despine(left=True, bottom=True, ax=ax)
+sns.despine(left=True, bottom=True, ax=legend_ax)
+
+fig.suptitle("Poles of\nAR processes", y=1.0)
 fig.savefig(os.path.join(fig_path, "biowta_good_vs_bad_reconstruction.pdf"))
+
+# %% [markdown]
+# # Comparing all enhancements
+
+# %%
+biowta_mods_seg_scores = pd.DataFrame(
+    {
+        two_ar3.biowta_configurations_human[key]: crt_res[1].trial_scores
+        for key, crt_res in two_ar3.result_biowta_mods.items()
+    }
+)
+biowta_mods_weight_errors = pd.DataFrame(
+    {
+        two_ar3.biowta_configurations_human[key]: np.asarray(
+            [
+                np.linalg.norm(_.weight_errors_normalized_[-1])
+                for _ in crt_res[1].history
+            ]
+        )
+        for key, crt_res in two_ar3.result_biowta_mods.items()
+    }
+)
+
+# %%
+with plt.style.context(paper_style):
+    with FigureManager(8, 8, despine_kws={"offset": 0}, figsize=(5.76, 5.76)) as (
+        fig,
+        axs,
+    ):
+        for i in range(8):
+            crt_col_i = biowta_mods_seg_scores.columns[i]
+            crt_series_i = biowta_mods_seg_scores[crt_col_i]
+            for j in range(8):
+                crt_col_j = biowta_mods_seg_scores.columns[j]
+                crt_series_j = biowta_mods_seg_scores[crt_col_j]
+
+                ax = axs[i, j]
+
+                if i != j:
+                    ax.plot(
+                        [0.45, 1.05], [0.45, 1.05], "--", c="gray", alpha=0.7, lw=0.5
+                    )
+                    ax.scatter(crt_series_j, crt_series_i, 1, alpha=0.7)
+
+                    ax.set_yticks([0.5, 1.0])
+                    ax.set_ylim(0.45, 1.05)
+                    ax.set_aspect(1.0)
+                else:
+                    ax.hist(crt_series_i, 15)
+                    ax.set_yticks([])
+                    ax.annotate(
+                        "{:.0f}%".format(100 * np.median(crt_series_i)),
+                        (0.15, 0.80),
+                        xycoords="axes fraction",
+                    )
+
+                ax.set_xlim(0.45, 1.05)
+                ax.set_xticks([0.5, 1.0])
+                ax.tick_params(axis="both", which="major", length=1, pad=1, labelsize=4)
+                for which in ["bottom", "left"]:
+                    ax.spines[which].set_linewidth(0.5)
+
+                if i == 7:
+                    ax.set_xlabel(crt_col_j.replace("+", "\n"))
+                if j == 0:
+                    ax.set_ylabel(crt_col_i.replace("+", "\n"))
+
+for i in range(8):
+    sns.despine(left=True, ax=axs[i, i])
+
+fig.savefig(os.path.join(fig_path, "all_mods_pair_coparison.pdf"))
 
 # %% [markdown]
 # ## SCRATCH
@@ -1579,35 +1807,33 @@ with plt.style.context(paper_style):
         ax_weight_progress, ax_weight_histo, ax_weight_vs_seg = axs
 
         # draw weight error progression
-        max_weight_error = 2.0
+        max_weight_error = 1.4
         ax = ax_weight_progress
         for crt_idx, crt_roll in enumerate(
             two_ar3.result_biowta_mods[0, 0, 0][1].rolling_weight_errors_normalized
         ):
             crt_kws = {"c": "gray", "lw": 0.5, "alpha": 0.3}
-            if (
-                crt_idx == two_ar3.good_biowta_idx
-                or crt_idx == two_ar3.good_biowta_ident_idx
-            ):
+            if crt_idx in two_ar3.good_idxs:
                 crt_kws["lw"] = 2.0
                 crt_kws["alpha"] = 1.0
-                crt_kws["c"] = "C0" if crt_idx == two_ar3.good_biowta_idx else "C1"
+                crt_kws["c"] = f"C{two_ar3.good_idxs.index(crt_idx)}"
             ax.plot(*crt_roll, **crt_kws)
         ax.set_ylim(0, max_weight_error)
-        ax.set_xlabel("time")
+        ax.set_xlabel("time step")
         ax.set_ylabel("normalized\nreconstruction error")
         ax.set_xlim(0, two_ar3.n_samples)
 
         # draw the late error distribution
         ax = ax_weight_histo
         late_errors = [
-            _[1][-1] for _ in two_ar3.result_biowta_mods[0, 0, 0][1].rolling_weight_errors_normalized
+            _[1][-1]
+            for _ in two_ar3.result_biowta_mods[0, 0, 0][
+                1
+            ].rolling_weight_errors_normalized
         ]
         sns.kdeplot(y=late_errors, shade=True, color="gray", ax=ax)
         sns.rugplot(y=late_errors, height=0.1, alpha=0.5, color="gray", ax=ax)
-        for i, special_idx in enumerate(
-            [two_ar3.good_biowta_idx, two_ar3.good_biowta_ident_idx]
-        ):
+        for i, special_idx in enumerate(two_ar3.good_idxs):
             sns.rugplot(
                 y=[late_errors[special_idx]],
                 height=0.1,
@@ -1627,11 +1853,13 @@ with plt.style.context(paper_style):
             for _ in two_ar3.dataset.armas
         ]
         h = ax.scatter(
-            two_ar3.result_biowta_mods[0, 0, 0][1].trial_scores, late_errors, s=6, c="gray", alpha=0.4
+            two_ar3.result_biowta_mods[0, 0, 0][1].trial_scores,
+            late_errors,
+            s=6,
+            c="gray",
+            alpha=0.4,
         )
-        for i, special_idx in enumerate(
-            [two_ar3.good_biowta_idx, two_ar3.good_biowta_ident_idx]
-        ):
+        for i, special_idx in enumerate(two_ar3.good_idxs):
             ax.scatter(
                 [two_ar3.result_biowta_mods[0, 0, 0][1].trial_scores[special_idx]],
                 [late_errors[special_idx]],
