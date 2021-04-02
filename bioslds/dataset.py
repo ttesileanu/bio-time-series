@@ -27,20 +27,30 @@ class SwitchingSignal:
     armas : list
         List of `Arma` processes that were used to generate the signal. The values in
         `usage_seq` are indices in this list.
+    scale : float
+        An overall scaling factor that was applied to the whole signal. That is, `y` is
+        `scale` times the signal that is obtained by passing the source `u` through the
+        appropriate model from `armas`.
     """
 
     def __init__(
-        self, y: np.ndarray, u: np.ndarray, usage_seq: np.ndarray, armas: list
+        self,
+        y: np.ndarray,
+        u: np.ndarray,
+        usage_seq: np.ndarray,
+        armas: list,
+        scale: float = 1,
     ):
         self.y = y
         self.u = u
         self.usage_seq = usage_seq
         self.armas = armas
+        self.scale = scale
 
     def __repr__(self) -> str:
         return (
             f"SwitchingSignal(y={self.y}, u={self.u}, usage_seq={self.usage_seq}, "
-            f"armas={self.armas})"
+            f"armas={self.armas}, scale={self.scale})"
         )
 
 
@@ -273,9 +283,12 @@ class RandomArmaDataset(Sequence[SwitchingSignal]):
         )
 
         if self.normalize:
-            y /= np.std(y)
+            scale = 1.0 / np.std(y)
+            y *= scale
+        else:
+            scale = 1.0
 
-        return SwitchingSignal(y, u, usage_seq, list(crt_armas))
+        return SwitchingSignal(y, u, usage_seq, list(crt_armas), scale)
 
     def __str__(self) -> str:
         s = f"RandomArmaDataset(n_signals={self.n_signals}, n_samples={self.n_samples})"
