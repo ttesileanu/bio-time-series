@@ -650,9 +650,9 @@ def get_accuracy_metrics(
 
 
 # %%
-def predict_plain_score(armas: Sequence, sigma: float = 1) -> float:
+def predict_plain_score(armas: Sequence, sigma_ratio: float = 1) -> float:
     delta = np.linalg.norm(armas[1].a - armas[0].a)
-    return 0.5 + np.arctan(delta * sigma * np.sqrt(np.pi / 8)) / np.pi
+    return 0.5 + np.arctan(delta * sigma_ratio * np.sqrt(np.pi / 8)) / np.pi
 
 
 # %% [markdown]
@@ -1158,7 +1158,8 @@ print(
 
 # %%
 predicted_plain_scores = [
-    predict_plain_score(crt_sig.armas) for crt_sig in tqdm(two_ar3.dataset)
+    predict_plain_score(crt_sig.armas, sigma_ratio=1.0 / crt_sig.scale)
+    for crt_sig in tqdm(two_ar3.dataset)
 ]
 
 # %%
