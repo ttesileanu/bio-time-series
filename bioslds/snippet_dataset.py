@@ -8,6 +8,8 @@ import numpy as np
 
 from typing import Sequence, Union
 
+from bioslds.markov import SemiMarkov
+
 
 class SwitchingSnippetSignal:
     """ A signal generated from switching snippets.
@@ -55,8 +57,8 @@ class RandomSnippetDataset(Sequence[SwitchingSnippetSignal]):
             Random seeds to use for generating the signals.
         normalize : bool
             If true, every signal is normalized to have unit variance.
-        arma_hsmm_kws : dict
-            Additional arguments to be passed to `ArmaHSMM` constructor.
+        semi_markov_kws : dict
+            Additional arguments to be passed to `SemiMarkov` constructor.
         """
 
     def __init__(
@@ -87,7 +89,7 @@ class RandomSnippetDataset(Sequence[SwitchingSnippetSignal]):
             `np.random.Generator`).
         normalize
             If true, every signal is normalized to have unit variance.
-        All other keyword arguments will be passed to `ArmaHSMM` constructor.
+        All other keyword arguments will be passed to `SemiMarkov` constructor.
         """
         self.n_signals = n_signals
         self.n_samples = n_samples
@@ -107,7 +109,18 @@ class RandomSnippetDataset(Sequence[SwitchingSnippetSignal]):
             seeds.append(rand_int(0, sys.maxsize))
         self.signal_seeds = seeds
         self.normalize = normalize
-        self.arma_hsmm_kws = copy.copy(kwargs)
+
+        # keep track of SemiMarkov keywords
+        self.semi_markov_kws = copy.copy(kwargs)
+        # ...but ensure that the maximum dwell time does not exceed snippet length
+        max_dwell = self.semi_markov_kws.get("max_dwell", np.inf)
+        if np.size(max_dwell) == 1:
+            max_dwell = np.repeat(max_dwell, len(self.snippets))
+        else:
+            max_dwell = np.array(max_dwell)
+        for crt_max, crt_snippet in zip(max_dwell, self.snippets):
+            max_dwell = min(crt_max, len(crt_snippet))
+        self.semi_markov_kws["max_dwell"] = max_dwell
 
         self.hdf_skip_contents = True
 
@@ -137,10 +150,12 @@ class RandomSnippetDataset(Sequence[SwitchingSnippetSignal]):
         seed = self.signal_seeds[idx]
         rng = np.random.default_rng(seed)
 
-        # output something
+        # create an ArmaHSMM instance
+        semi_markov = SemiMarkov(len(self.snippets), rng=rng, **self.semi_markov_kws)
+        usage_seq = semi_markov.sample(self.n_samples)
 
         return SwitchingSnippetSignal(
-            y=rng.normal(size=self.n_samples), usage_seq=np.zeros(self.n_samples)
+            y=rng.normal(size=self.n_samples), usage_seq=usage_seq
         )
 
 
