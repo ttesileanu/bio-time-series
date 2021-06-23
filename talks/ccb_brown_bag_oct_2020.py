@@ -41,7 +41,7 @@ from bioslds.regressors import (
 )
 from bioslds.plotting import FigureManager, show_latent, colorbar, make_gradient_cmap
 from bioslds.cluster_quality import calculate_sliding_score, unordered_accuracy_score
-from bioslds.dataset import RandomArmaDataset, SwitchingSignal
+from bioslds.dataset import RandomArmaDataset, SwitchingArmaSignal
 from bioslds.batch import hyper_score_ar
 from bioslds.arma import make_random_arma, Arma
 from bioslds.regressor_utils import to_hankel, transform_ar
@@ -61,7 +61,7 @@ fig_path = os.path.join("..", "figs")
 # ### General
 
 # %%
-def predict_accuracy(armas: tuple, sig: SwitchingSignal) -> float:
+def predict_accuracy(armas: tuple, sig: SwitchingArmaSignal) -> float:
     """ Predict accuracy score from ARMA models.
     
     Parameters
