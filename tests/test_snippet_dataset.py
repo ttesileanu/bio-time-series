@@ -108,5 +108,106 @@ class TestRandomSnippetDatasetOutput(unittest.TestCase):
                 self.assertLessEqual(n, len(self.snippets[elem]))
 
 
+class TestRandomSnippetDatasetRng(unittest.TestCase):
+    def setUp(self):
+        self.n_signals = 3
+        self.n_samples = 51
+        rng = np.random.default_rng(0)
+        self.snippets = [
+            rng.normal(size=rng.integers(5, 10)) for _ in range(self.n_signals)
+        ]
+
+    def create_dataset(self, rng) -> RandomSnippetDataset:
+        dataset = RandomSnippetDataset(
+            self.n_signals, self.n_samples, self.snippets, rng=rng
+        )
+        return dataset
+
+    def test_int_seed_rng_same_as_calling_default_rng(self):
+        seed = 13
+        dataset1 = self.create_dataset(seed)
+        dataset2 = self.create_dataset(np.random.default_rng(seed))
+
+        for crt_sig1, crt_sig2 in zip(dataset1, dataset2):
+            np.testing.assert_equal(crt_sig1.y, crt_sig2.y)
+            np.testing.assert_equal(crt_sig1.usage_seq, crt_sig2.usage_seq)
+
+    def test_with_random_state(self):
+        dataset = self.create_dataset(np.random.RandomState(1))
+        self.assertEqual(len(dataset), self.n_signals)
+
+
+class TestRandomSnippetDatasetKeywordForwarding(unittest.TestCase):
+    def test_init_kwargs_forwarded_to_semi_markov(self):
+        dataset = RandomSnippetDataset(
+            3, 20, snippets=([0, 1, 2], [-0.5, 0.5, 1]), min_dwell=2, dwell_times=2.5,
+        )
+        for crt_sig in dataset:
+            rle = rle_encode(crt_sig.usage_seq)
+            # note that last streak could be chopped, so might be shorter than min_dwell
+            self.assertGreaterEqual(min(_[1] for _ in rle[:-1]), 2)
+
+
+class TestRandomSnippetDatasetStrAndRepr(unittest.TestCase):
+    def setUp(self):
+        self.n_signals = 4
+        self.n_samples = 10
+
+        rng = np.random.default_rng(0)
+        self.snippets = [
+            rng.normal(size=rng.integers(5, 10)) for _ in range(self.n_signals)
+        ]
+        self.semi_markov_kws = {"min_dwell": 2}
+        self.dataset = RandomSnippetDataset(
+            self.n_signals, self.n_samples, self.snippets, **self.semi_markov_kws
+        )
+
+    def test_str(self):
+        s = str(self.dataset)
+        s_exp = (
+            f"RandomSnippetDataset(n_signals={self.n_signals}, "
+            + f"n_samples={self.n_samples})"
+        )
+
+        self.assertEqual(s, s_exp)
+
+    def test_repr(self):
+        r = repr(self.dataset)
+
+        self.assertTrue(r.startswith("RandomSnippetDataset("))
+        self.assertTrue(r.endswith(")"))
+        self.assertNotEqual(r.find("n_signals="), -1)
+        self.assertNotEqual(r.find("n_samples="), -1)
+        self.assertNotEqual(r.find("signal_seeds="), -1)
+        self.assertNotEqual(r.find("semi_markov_kws="), -1)
+
+
+class TestRandomSnippetDatasetNormalize(unittest.TestCase):
+    def setUp(self):
+        self.n_signals = 3
+        self.n_samples = 100
+        rng = np.random.default_rng(0)
+        self.snippets = [
+            rng.normal(size=rng.integers(5, 10)) for _ in range(self.n_signals)
+        ]
+        self.kwargs = dict(
+            n_signals=self.n_signals,
+            n_samples=self.n_samples,
+            snippets=self.snippets
+        )
+        self.dataset = RandomSnippetDataset(**self.kwargs)
+
+    def test_normalize_returns_same_signals_with_unit_variance(self):
+        dataset_norm = RandomSnippetDataset(**self.kwargs, normalize=True)
+        for sig, sig_norm in zip(self.dataset, dataset_norm):
+            # noinspection PyTypeChecker
+            self.assertAlmostEqual(np.std(sig_norm.y), 1)
+            np.testing.assert_allclose(sig_norm.y, sig.y / np.std(sig.y))
+            np.testing.assert_equal(sig_norm.usage_seq, sig.usage_seq)
+
+            self.assertAlmostEqual(1.0, sig.scale)
+            self.assertAlmostEqual(1.0 / np.std(sig.y), sig_norm.scale)
+
+
 if __name__ == "__main__":
     unittest.main()

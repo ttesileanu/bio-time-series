@@ -20,16 +20,21 @@ class SwitchingSnippetSignal:
         The signal.
     usage_seq : np.ndarray
         A vector of integers indicating which snippet was used at each time step.
+    scale : float
+        Amount by which the whole signal was scaled (if `normalize` was enabled in
+        `RandomSnippetDataset`).
     """
 
-    def __init__(
-        self, y: np.ndarray, usage_seq: np.ndarray,
-    ):
+    def __init__(self, y: np.ndarray, usage_seq: np.ndarray, scale: float = 1):
         self.y = y
         self.usage_seq = usage_seq
+        self.scale = scale
 
     def __repr__(self) -> str:
-        return f"SwitchingSnippetSignal(y={self.y}, usage_seq={self.usage_seq})"
+        return (
+            f"SwitchingSnippetSignal(y={self.y}, usage_seq={self.usage_seq}, "
+            f"scale={self.scale})"
+        )
 
 
 class RandomSnippetDataset(Sequence[SwitchingSnippetSignal]):
@@ -154,9 +159,30 @@ class RandomSnippetDataset(Sequence[SwitchingSnippetSignal]):
         semi_markov = SemiMarkov(len(self.snippets), rng=rng, **self.semi_markov_kws)
         usage_seq = semi_markov.sample(self.n_samples)
 
-        return SwitchingSnippetSignal(
-            y=rng.normal(size=self.n_samples), usage_seq=usage_seq
+        y = rng.normal(size=self.n_samples)
+        if self.normalize:
+            scale = 1.0 / np.std(y)
+            y *= scale
+        else:
+            scale = 1.0
+
+        return SwitchingSnippetSignal(y=y, usage_seq=usage_seq, scale=scale)
+
+    def __str__(self) -> str:
+        s = (
+            f"RandomSnippetDataset(n_signals={self.n_signals}, "
+            f"n_samples={self.n_samples})"
         )
+        return s
+
+    def __repr__(self) -> str:
+        r = (
+            f"RandomSnippetDataset(n_signals={self.n_signals}, "
+            + f"n_samples={self.n_samples}, "
+            + f"signal_seeds={repr(self.signal_seeds)}, "
+            + f"semi_markov_kws={repr(self.semi_markov_kws)})"
+        )
+        return r
 
 
 class RandomSnippetDatasetIterator(object):
