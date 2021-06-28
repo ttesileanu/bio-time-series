@@ -9,6 +9,7 @@ import numpy as np
 from typing import Sequence, Union
 
 from bioslds.markov import SemiMarkov
+from bioslds.utils import rle_encode
 
 
 class SwitchingSnippetSignal:
@@ -159,7 +160,17 @@ class RandomSnippetDataset(Sequence[SwitchingSnippetSignal]):
         semi_markov = SemiMarkov(len(self.snippets), rng=rng, **self.semi_markov_kws)
         usage_seq = semi_markov.sample(self.n_samples)
 
-        y = rng.normal(size=self.n_samples)
+        # generate the signal
+        y = np.zeros(self.n_samples)
+        usage_rle = rle_encode(usage_seq)
+        idx = 0
+        for elem, n in usage_rle:
+            crt_snippet = self.snippets[elem]
+            crt_start = rng.integers(0, len(crt_snippet) - n + 1)
+            y[idx : idx + n] = crt_snippet[crt_start : crt_start + n]
+            idx += n
+
+        # normalize, if asked to
         if self.normalize:
             scale = 1.0 / np.std(y)
             y *= scale

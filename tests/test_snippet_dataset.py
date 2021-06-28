@@ -10,9 +10,10 @@ class TestRandomSnippetDatasetAccess(unittest.TestCase):
     def setUp(self):
         rng = np.random.default_rng(0)
         self.n_signals = 5
+        self.n_snippets = 3
         self.n_samples = 25
         self.snippets = [
-            rng.normal(size=rng.integers(10, 30)) for _ in range(self.n_signals)
+            rng.normal(size=rng.integers(10, 30)) for _ in range(self.n_snippets)
         ]
         self.dataset = RandomSnippetDataset(
             self.n_signals, self.n_samples, self.snippets
@@ -49,13 +50,14 @@ class TestRandomSnippetDatasetAccess(unittest.TestCase):
             _ = self.dataset[-self.n_signals - 1]
 
 
-class TestRandomSnippetDatasetOutput(unittest.TestCase):
+class TestRandomSnippetDatasetOutputBasic(unittest.TestCase):
     def setUp(self):
         self.n_signals = 3
+        self.n_snippets = 3
         self.n_samples = 256
         rng = np.random.default_rng(0)
         self.snippets = [
-            rng.normal(size=rng.integers(3, 5)) for _ in range(self.n_signals)
+            rng.normal(size=rng.integers(3, 5)) for _ in range(self.n_snippets)
         ]
         self.dataset = RandomSnippetDataset(
             self.n_signals, self.n_samples, self.snippets, dwell_times=3,
@@ -106,6 +108,59 @@ class TestRandomSnippetDatasetOutput(unittest.TestCase):
             encoded = rle_encode(crt_sig.usage_seq)
             for (elem, n) in encoded:
                 self.assertLessEqual(n, len(self.snippets[elem]))
+
+
+class TestRandomSnippetDatasetOutputDetails(unittest.TestCase):
+    def setUp(self):
+        self.n_signals = 1
+        self.n_snippets = 3
+        self.n_samples = 256
+        rng = np.random.default_rng(0)
+        self.snippets = [
+            rng.normal(size=rng.integers(10, 25)) for _ in range(self.n_snippets)
+        ]
+        self.dataset = RandomSnippetDataset(
+            self.n_signals, self.n_samples, self.snippets, dwell_times=7
+        )
+
+    def test_signal_snippets_match_usage_seq(self):
+        sig = self.dataset[0]
+        usage_rle = rle_encode(sig.usage_seq)
+        idx = 0
+        for elem, n in usage_rle:
+            full_snippet = self.snippets[elem]
+            sub_y = sig.y[idx : idx + n]
+
+            n_pos = len(full_snippet) - n + 1
+            errors = np.zeros(n_pos)
+            for i in range(n_pos):
+                errors[i] = np.max(np.abs(full_snippet[i : i + n] - sub_y))
+
+            self.assertLess(np.min(errors), 1e-6)
+
+            idx += n
+
+    def test_used_snippets_are_not_constant_distance_from_the_ends(self):
+        sig = self.dataset[0]
+        usage_rle = rle_encode(sig.usage_seq)
+        idx = 0
+        min_error_idxs = np.zeros(len(usage_rle), dtype=int)
+        min_error_idxs_rev = np.zeros(len(usage_rle), dtype=int)
+        for k, (elem, n) in enumerate(usage_rle):
+            full_snippet = self.snippets[elem]
+            sub_y = sig.y[idx : idx + n]
+
+            n_pos = len(full_snippet) - n + 1
+            errors = np.zeros(n_pos)
+            for i in range(n_pos):
+                errors[i] = np.max(np.abs(full_snippet[i : i + n] - sub_y))
+
+            min_error_idxs[k] = np.argmin(errors)
+            min_error_idxs_rev[k] = n_pos - min_error_idxs[k]
+            idx += n
+
+        self.assertGreater(len(np.unique(min_error_idxs)), 1)
+        self.assertGreater(len(np.unique(min_error_idxs_rev)), 1)
 
 
 class TestRandomSnippetDatasetRng(unittest.TestCase):
@@ -191,9 +246,7 @@ class TestRandomSnippetDatasetNormalize(unittest.TestCase):
             rng.normal(size=rng.integers(5, 10)) for _ in range(self.n_signals)
         ]
         self.kwargs = dict(
-            n_signals=self.n_signals,
-            n_samples=self.n_samples,
-            snippets=self.snippets
+            n_signals=self.n_signals, n_samples=self.n_samples, snippets=self.snippets
         )
         self.dataset = RandomSnippetDataset(**self.kwargs)
 
