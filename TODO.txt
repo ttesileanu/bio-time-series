@@ -1,4 +1,0 @@
-* BioWTARegressor
-  * add other ways of calculating argmax
-    (a) neural dynamics till convergence
-    (b) neural dynamics for fixed number of steps
