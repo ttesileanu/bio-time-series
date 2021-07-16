@@ -6,10 +6,12 @@ module load python3
 
 source env/bin/activate
 
+DATA_RNG=13746
+
 ./run_hyper.py \
-    -n100 \
-    --n-signals 50 \
-    -d$1 \
+    -n50 \
+    --n-signals 200 \
+    -d$DATA_RNG \
     -c$1 \
     -o$1 \
     --normalize \
