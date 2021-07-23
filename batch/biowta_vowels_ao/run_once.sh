@@ -15,10 +15,10 @@ DATA_RNG=1942
     -c$1 \
     -o$1 \
     --normalize \
-    --rate-range 0.001 0.1 --rate-log \
-    --exp-streak-range 2.0 10.0 \
-    --temperature-range 0.0 2.0 \
-    --timescale-range 1.0 4.0 --timescale-log \
+    --rate-range 0.003 0.02 --rate-log \
+    --exp-streak-range 2.0 2.0 \
+    --temperature-range 8.0 30.0 --temperature-log \
+    --timescale-range 5.0 10.0 \
     --economy \
     test_$1.hdf5 vowel ao biowta \
     > logs/$1.out \
