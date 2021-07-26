@@ -15,9 +15,9 @@ DATA_RNG=1942
     -c$1 \
     -o$1 \
     --normalize \
-    --rate-range 0.00005 0.005 --rate-log \
-    --exp-streak-range 5.0 20.0 --exp-streak-log \
-    --n-features-range 20 50 \
+    --rate-range 0.0001 0.01 --rate-log \
+    --exp-streak-range 1.0 30.0 --exp-streak-log \
+    --n-features-range 2 40 --n-features-log \
     --economy \
     test_$1.hdf5 vowel ao xcorr \
     > logs/$1.out \
