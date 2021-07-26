@@ -37,7 +37,8 @@ def random_maximize(
     log_scale
         List of parameter names that should be sampled uniformly on a log scale instead
         of the usual linear one. This assumes that both ends of the range for that
-        parameter are strictly positive, and forces the parameter to be real-valued.
+        parameter are strictly positive. For integer parameters, values are first
+        sampled on a continuous log scale and then rounded to the nearest integer.
     progress
         Callable to use for progress tracking.
 
@@ -53,15 +54,19 @@ def random_maximize(
     if not hasattr(rng, "uniform"):
         rng = np.random.default_rng(rng)
 
-    # handle optional log_sclae
+    # handle optional log_scale
     if log_scale is None:
         log_scale = []
 
     # figure out which random function to use for each parameter
     param_rng = {}
     for name, (low, high) in param_ranges.items():
-        if name not in log_scale and isinstance(low, int) and isinstance(high, int):
-            if hasattr(rng, "integers"):
+        if isinstance(low, int) and isinstance(high, int):
+            if name in log_scale:
+                param_rng[name] = lambda llo=np.log(low), lhi=np.log(high): int(
+                    np.round(np.exp(rng.uniform(llo, lhi)))
+                )
+            elif hasattr(rng, "integers"):
                 param_rng[name] = lambda lo=low, hi=high: rng.integers(lo, hi)
             else:
                 param_rng[name] = lambda lo=low, hi=high: rng.randint(lo, hi)

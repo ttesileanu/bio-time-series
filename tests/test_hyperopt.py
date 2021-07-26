@@ -173,16 +173,16 @@ class TestRandomMaximizeWithScalarFunction(unittest.TestCase):
 
 
 class TestRandomMaximize(unittest.TestCase):
-    def test_log_scale_forces_var_to_be_float(self):
+    def test_log_scale_rounds_integer_vars(self):
         _, _, details = random_maximize(
             lambda **kwargs: 1.0, {"i_log": (1, 5)}, 20, log_scale=["i_log"]
         )
         not_int = [
             np.abs(_["i_log"] - np.round(_["i_log"])) > 1e-10 for _ in details["params"]
         ]
-        self.assertGreater(np.sum(not_int), 0)
+        self.assertEqual(np.sum(not_int), 0)
 
-    def test_log_scale_samples_differently_than_default(self):
+    def test_log_scale_samples_differently_than_default_for_real_var(self):
         seed = 10
         _, _, details1 = random_maximize(
             lambda **kwargs: 1.0, {"i_log": (1.5, 3.5)}, 20, rng=seed
@@ -191,6 +191,25 @@ class TestRandomMaximize(unittest.TestCase):
             lambda **kwargs: 1.0,
             {"i_log": (1.5, 3.5)},
             20,
+            rng=seed,
+            log_scale=["i_log"],
+        )
+
+        i1 = [_["i_log"] for _ in details1["params"]]
+        i2 = [_["i_log"] for _ in details2["params"]]
+
+        diff = np.max(np.abs(np.sort(i1) - np.sort(i2)))
+        self.assertGreater(diff, 1e-3)
+
+    def test_log_scale_samples_differently_than_default_for_integer_var(self):
+        seed = 10
+        _, _, details1 = random_maximize(
+            lambda **kwargs: 1.0, {"i_log": (1, 20)}, 100, rng=seed
+        )
+        _, _, details2 = random_maximize(
+            lambda **kwargs: 1.0,
+            {"i_log": (1, 20)},
+            100,
             rng=seed,
             log_scale=["i_log"],
         )
