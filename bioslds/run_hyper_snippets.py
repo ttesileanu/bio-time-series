@@ -7,7 +7,7 @@ import pickle
 import tqdm
 import h5py
 
-from typing import Tuple
+from typing import Tuple, Union
 
 from bioslds.regressors import BioWTARegressor, CrosscorrelationRegressor
 from bioslds.batch import hyper_score_ar
@@ -38,7 +38,7 @@ def run_hyper_optimize(
     algo: str,
     dataset: RandomSnippetDataset,
     n_trials: int,
-    n_features: int,
+    n_features: Union[int, tuple],
     clusterer_seed: int,
     optimizer_seed: int,
     rate_range: tuple,
@@ -49,6 +49,7 @@ def run_hyper_optimize(
     temperature_log: bool,
     timescale_range: tuple,
     timescale_log: bool,
+    n_features_log: bool,
     monitor: list,
     monitor_step: int,
     economy: bool,
@@ -63,12 +64,19 @@ def run_hyper_optimize(
         log_scale.append("temperature")
     if timescale_log:
         log_scale.append("timescale")
+    if n_features_log:
+        log_scale.append("n_features")
+
+    # handle int or tuple n_features
+    if not hasattr(n_features, "__len__"):
+        n_features_range = (n_features, n_features)
+    else:
+        n_features_range = n_features
 
     # choose some common options used for all algorithms when calling hyper_score_ar
     common_hyper_args = (dataset, unordered_accuracy_score)
     common_hyper_kws = dict(
         n_models=len(dataset.snippets),
-        n_features=n_features,
         rng=clusterer_seed,
         progress=slow_tqdm,
         monitor=monitor,
@@ -82,6 +90,7 @@ def run_hyper_optimize(
             crt_res = hyper_score_ar(
                 make_bio_wta_with_stable_initial,
                 *common_hyper_args,
+                n_features=kwargs["n_features"],
                 rate=kwargs["rate"],
                 trans_mat=1 - 1 / kwargs["exp_streak"],
                 temperature=kwargs["temperature"],
@@ -100,6 +109,7 @@ def run_hyper_optimize(
             crt_res = hyper_score_ar(
                 CrosscorrelationRegressor,
                 *common_hyper_args,
+                n_features=kwargs["n_features"],
                 nsm_rate=kwargs["rate"],
                 xcorr_rate=1 / kwargs["exp_streak"],
                 **common_hyper_kws,
@@ -120,6 +130,7 @@ def run_hyper_optimize(
             "exp_streak": exp_streak_range,
             "temperature": temperature_range,
             "timescale": timescale_range,
+            "n_features": n_features_range,
         },
         n_trials,
         log_scale=log_scale,
@@ -271,6 +282,19 @@ if __name__ == "__main__":
         help="sample averaging timescale in log space",
     )
     parser.add_argument(
+        "--n-features-range",
+        type=int,
+        nargs=2,
+        default=None,
+        help="range of number of features",
+    )
+    parser.add_argument(
+        "--n-features-log",
+        action="store_true",
+        default=False,
+        help="sample number of features in log space (rounded to int)",
+    )
+    parser.add_argument(
         "--store-signal-set",
         action="store_true",
         default=False,
@@ -345,11 +369,14 @@ if __name__ == "__main__":
         hyper_dataset.hdf_skip_contents = False
 
     # run the hyper optimization
+    n_feat = main_args.n_features
+    if main_args.n_features_range is not None:
+        n_feat = main_args.n_features_range
     hyper_res = run_hyper_optimize(
         main_args.algorithm,
         hyper_dataset,
         n_trials=main_args.n_trials,
-        n_features=main_args.n_features,
+        n_features=n_feat,
         clusterer_seed=main_args.clusterer,
         optimizer_seed=main_args.optimizer,
         rate_range=main_args.rate_range,
@@ -360,6 +387,7 @@ if __name__ == "__main__":
         temperature_log=main_args.temperature_log,
         timescale_range=main_args.timescale_range,
         timescale_log=main_args.timescale_log,
+        n_features_log=main_args.n_features_log,
         monitor=main_args.monitor,
         monitor_step=main_args.monitor_step,
         economy=main_args.economy,
