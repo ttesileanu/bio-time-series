@@ -11,6 +11,7 @@ import seaborn as sns
 
 import numpy as np
 import scipy.optimize as sciopt
+import pickle
 
 from tqdm.notebook import tqdm
 
@@ -678,3 +679,15 @@ def calculate_asymmetry_measures(
         )
 
     results.asymmetry = asymmetry
+
+
+def load_snippets(snip_type: str, snip_choice: str) -> list:
+    snip_file = f"{snip_type}_dataset.pkl"
+    with open(snip_file, "rb") as f:
+        all_snips = pickle.load(f)
+
+    lst = []
+    for item in snip_choice:
+        lst.append(all_snips[item])
+
+    return lst
