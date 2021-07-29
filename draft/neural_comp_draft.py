@@ -21,6 +21,7 @@
 # %config InlineBackend.print_figure_kwargs = {'bbox_inches': None}
 import time
 import copy
+import pickle
 
 import numpy as np
 import pandas as pd
@@ -44,7 +45,7 @@ from bioslds.regressors import (
 from bioslds.plotting import FigureManager, show_latent, colorbar, make_gradient_cmap
 from bioslds.cluster_quality import calculate_sliding_score, unordered_accuracy_score
 from bioslds.batch import hyper_score_ar
-from bioslds.dataset import RandomArmaDataset
+from bioslds.dataset import RandomArmaDataset, RandomSnippetDataset
 from bioslds.arma import Arma, make_random_arma
 from bioslds.arma_hsmm import sample_switching_models
 
@@ -551,7 +552,7 @@ def get_accuracy_metrics(
     convergence_threshold: float = 0.90,
     convergence_resolution: float = 1000.0,
 ) -> dict:
-    """ Calculate some accuracy metrics for  run.
+    """ Calculate some accuracy metrics for run.
     
     Parameters
     ----------
@@ -654,6 +655,71 @@ def predict_plain_score(armas: Sequence, sigma_ratio: float = 1) -> float:
     delta = np.linalg.norm(armas[1].a - armas[0].a)
     return 0.5 + np.arctan(delta * sigma_ratio * np.sqrt(np.pi / 8)) / np.pi
 
+
+# %%
+def calculate_asymmetry_measures(
+    results: SimpleNamespace, dataset: RandomArmaDataset, test_fraction: float = 0.1
+):
+    """ Calculate some metrics of asymmetry in segmentation.
+    
+    The function adds a field called `asymmetry` to the results, which is a list of
+    namespaces, one for each run. Each namespace contains the following:
+        * `confusion`:
+            A confusion matrix such that `confusion[i, j]` is the fraction of time steps
+            in which the ground-truth process `i` was (mis)identified as process `j`.
+            Only samples in the chosen `test_fraction` are used.
+        * `confusion_ordered`:
+            A version of the confusion matrix in which the columns (i.e., model indices)
+            are reordered so as to maximize the rate with which the inferred group
+            assignments match the ground truth.
+        * `ordering`:
+            A sequence specifying the ordering used to generate `confusion_ordered`.
+            This obeys `ordering[i]` is the ground-truth label that best matches
+            inferred label `i`. Put differently,
+                confusion_ordered = confusion[:, ordering]
+            
+    
+    Parameters
+    ----------
+    results
+        Results namespace.
+    dataset
+        Sequence of signals on which the simulations were run.
+    test_fraction
+        Fraction of samples in each (ground-truth) run to use.
+    """
+    asymmetry = []
+    for history, signal in zip(tqdm(results.history), dataset):
+        true_r = signal.usage_seq
+        inferred_r = np.argmax(history.r, axis=1)
+
+        # focus on what is there after the burnin
+        n_samples = int(np.ceil(test_fraction * len(true_r)))
+        true_r = true_r[-n_samples:]
+        inferred_r = inferred_r[-n_samples:]
+
+        # build the confusion matrix
+        n = max(np.max(true_r) + 1, np.max(inferred_r) + 1)
+        confusion = np.zeros((n, n))
+        for i in range(n):
+            for j in range(n):
+                confusion[i, j] = np.mean((true_r == i) & (inferred_r == j))
+
+        # calculate the optimal ordering
+        _, ordering = unordered_accuracy_score(
+            true_r, inferred_r, return_assignment=True
+        )
+        confusion_ordered = confusion[:, ordering]
+
+        asymmetry.append(
+            SimpleNamespace(
+                confusion=confusion,
+                confusion_ordered=confusion_ordered,
+                ordering=ordering,
+            )
+        )
+
+    results.asymmetry = asymmetry
 
 # %% [markdown]
 # # Make plots explaining the problem setup
@@ -1788,6 +1854,310 @@ for i in range(8):
     sns.despine(left=True, ax=axs[i, i])
 
 fig.savefig(os.path.join(fig_path, "all_mods_pair_coparison.pdf"))
+
+
+# %% [markdown]
+# # Run BioWTA and autocorrelation on signals based on snippets of vowel sounds
+
+# %% [markdown]
+# ## Define the problem and the parameters for the learning algorithms
+
+# %% [markdown]
+# Using best parameters obtained from hyperoptimization runs.
+
+# %%
+def load_snippets(snip_type: str, snip_choice: str) -> list:
+    snip_file = f"{snip_type}_dataset.pkl"
+    with open(snip_file, "rb") as f:
+        all_snips = pickle.load(f)
+
+    lst = []
+    for item in snip_choice:
+        lst.append(all_snips[item])
+
+    return lst
+
+
+# %%
+two_vowels = SimpleNamespace(
+    n_signals=100,
+    n_samples=200_000,
+    dwell_times=100,
+    min_dwell=50,
+    normalize=True,
+    seed=3487,
+    n_models=2,
+    n_features=4,
+    wta_params={"rate": 0.006872, "temperature": 23.75966, "error_timescale": 6.590304},
+    xcorr_params={"n_features": 33, "nsm_rate": 0.51e-4, "xcorr_rate": 1 / 5.318138},
+    metric=unordered_accuracy_score,
+    good_score=0.70,
+    threshold_steps=10_000,
+)
+two_vowels.snippets = load_snippets("vowel", "ao")
+two_vowels.dataset = RandomSnippetDataset(
+    two_vowels.n_signals,
+    two_vowels.n_samples,
+    two_vowels.snippets,
+    dwell_times=two_vowels.dwell_times,
+    min_dwell=two_vowels.min_dwell,
+    normalize=two_vowels.normalize,
+    rng=two_vowels.seed,
+)
+
+# %%
+two_vowels.result_biowta = hyper_score_ar(
+    BioWTARegressor,
+    two_vowels.dataset,
+    two_vowels.metric,
+    n_models=two_vowels.n_models,
+    n_features=two_vowels.n_features,
+    progress=tqdm,
+    monitor=["r", "weights_", "prediction_"],
+    **two_vowels.wta_params,
+)
+
+crt_scores = two_vowels.result_biowta[1].trial_scores
+crt_median = np.median(crt_scores)
+crt_quantile = np.quantile(crt_scores, 0.05)
+crt_good = np.mean(crt_scores > two_vowels.good_score)
+print(
+    f"BioWTA on vowels score: median={crt_median:.4f}, "
+    f"5%={crt_quantile:.4f}, "
+    f"fraction>{int(100 * two_vowels.good_score)}%={crt_good:.4f}"
+)
+
+# %%
+make_multi_trajectory_plot(
+    two_vowels.result_biowta[1],
+    two_vowels.dataset,
+    n_traces=25,
+    sliding_kws={"window_size": 5000, "overlap_fraction": 0.8},
+    highlight_idx=50,
+    trace_kws={"alpha": 0.85, "lw": 0.75, "color": "gray"},
+    rug_kws={"alpha": 0.3},
+)
+
+# %%
+crt_frac_good = np.mean(
+    two_vowels.result_biowta[1].trial_scores > two_vowels.good_score
+)
+print(
+    f"Percentage of runs with BioWTA accuracies over {int(two_vowels.good_score * 100)}%: "
+    f"{int(crt_frac_good * 100)}%."
+)
+
+crt_frac_fast = np.mean(
+    np.asarray(two_vowels.result_biowta[1].convergence_times)
+    <= two_vowels.threshold_steps
+)
+print(
+    f"Percentage of runs with BioWTA convergence times under {two_vowels.threshold_steps}: "
+    f"{int(crt_frac_fast * 100)}%."
+)
+
+# %%
+two_vowels.result_xcorr = hyper_score_ar(
+    CrosscorrelationRegressor,
+    two_vowels.dataset,
+    two_vowels.metric,
+    n_models=two_vowels.n_models,
+    **two_vowels.xcorr_params,
+    progress=tqdm,
+    monitor=["r", "nsm.weights_", "xcorr.coef_"],
+)
+
+crt_scores = two_vowels.result_xcorr[1].trial_scores
+crt_median = np.median(crt_scores)
+crt_quantile = np.quantile(crt_scores, 0.05)
+crt_good = np.mean(crt_scores > two_vowels.good_score)
+print(
+    f"xcorr on vowels score: median={crt_median:.4f}, "
+    f"5%={crt_quantile:.4f}, "
+    f"fraction>{int(100 * two_vowels.good_score)}%={crt_good:.4f}"
+)
+
+# %%
+make_multi_trajectory_plot(
+    two_vowels.result_xcorr[1],
+    two_vowels.dataset,
+    n_traces=25,
+    sliding_kws={"window_size": 5000, "overlap_fraction": 0.8},
+    highlight_idx=50,
+    trace_kws={"alpha": 0.85, "lw": 0.75, "color": "gray"},
+    rug_kws={"alpha": 0.3},
+)
+
+# %%
+crt_frac_good = np.mean(
+    two_vowels.result_xcorr[1].trial_scores > two_vowels.good_score
+)
+print(
+    f"Percentage of runs with xcorr accuracies over {int(two_vowels.good_score * 100)}%: "
+    f"{int(crt_frac_good * 100)}%."
+)
+
+crt_frac_fast = np.mean(
+    np.asarray(two_vowels.result_xcorr[1].convergence_times)
+    <= two_vowels.threshold_steps
+)
+print(
+    f"Percentage of runs with xcorr convergence times under {two_vowels.threshold_steps}: "
+    f"{int(crt_frac_fast * 100)}%."
+)
+
+# %% [markdown]
+# ## Make plots of segmentation asymmetry
+
+# %%
+calculate_asymmetry_measures(two_ar3.result_biowta_chosen[1], two_ar3.dataset)
+
+# %%
+with FigureManager() as (_, ax):
+    crt_asymmetry = two_ar3.result_biowta_chosen[1].asymmetry[0]
+    crt_confusion = crt_asymmetry.confusion_ordered
+    crt_cmap = make_gradient_cmap("white_to_C1", "w", "C1")
+    sns.heatmap(crt_confusion, cmap=crt_cmap, vmin=0, vmax=0.5, ax=ax)
+    ax.set_aspect(1)
+
+# %%
+calculate_asymmetry_measures(two_vowels.result_biowta[1], two_vowels.dataset)
+
+# %%
+with FigureManager() as (_, ax):
+    crt_asymmetry = two_vowels.result_biowta[1].asymmetry[0]
+    crt_confusion = crt_asymmetry.confusion
+    crt_cmap = make_gradient_cmap("white_to_C1", "w", "C1")
+    sns.heatmap(crt_confusion, cmap=crt_cmap, vmin=0, vmax=0.5, ax=ax)
+    ax.set_aspect(1)
+
+# %% [markdown]
+# ### Check distribution of asymmetry measures in repeated runs on the same set of ARMAs
+
+# %% [markdown]
+# For each of the top `n_datasets` signals in `two_ar3.dataset`, we will create `n_signals` new datasets that use the same ARMA processes but a different random realization of the semi-Markov chain of latent states. We will then run `BioWTA` on all of these and measure the asymmetry in the confusion matrix. This should help us get an idea for what property of a process makes it harder to identify correctly.
+
+# %%
+arma_asymmetry = SimpleNamespace(
+    n_datasets=10,
+    n_signals=50,
+    # n_samples=two_ar3.n_samples,
+    n_samples=100_000,
+    n_models=two_ar3.n_models,
+    dwell_times=100,
+    min_dwell=50,
+    normalize=True,
+    seed=120,
+    metric=unordered_accuracy_score,
+    wta_params=two_ar3.biowta_configurations[1, 1, 0],
+)
+
+arma_asymmetry.n_features = two_ar3.n_features
+arma_asymmetry.arma_pairs = [
+    two_ar3.dataset[_].armas for _ in tqdm(range(arma_asymmetry.n_datasets))
+]
+arma_asymmetry.datasets = [
+    RandomArmaDataset(
+        arma_asymmetry.n_signals,
+        arma_asymmetry.n_samples,
+        armas=_,
+        dwell_times=arma_asymmetry.dwell_times,
+        min_dwell=arma_asymmetry.min_dwell,
+        normalize=arma_asymmetry.normalize,
+        rng=arma_asymmetry.seed,
+    )
+    for _ in arma_asymmetry.arma_pairs
+]
+
+# %%
+arma_asymmetry.results_biowta = []
+for dataset in tqdm(arma_asymmetry.datasets, desc="dataset"):
+    crt_res = hyper_score_ar(
+        BioWTARegressor,
+        dataset,
+        arma_asymmetry.metric,
+        n_models=arma_asymmetry.n_models,
+        n_features=arma_asymmetry.n_features,
+        progress=tqdm,
+        monitor=["r", "weights_", "prediction_"],
+        **arma_asymmetry.wta_params,
+    )
+
+    crt_scores = crt_res[1].trial_scores
+    crt_median = np.median(crt_scores)
+    crt_quantile = np.quantile(crt_scores, 0.05)
+    crt_good = np.mean(crt_scores > two_vowels.good_score)
+    print(
+        f"BioWTA on repeated runs of same ARMA pair score: median={crt_median:.4f}, "
+        f"5%={crt_quantile:.4f}, "
+        f"fraction>{int(100 * two_vowels.good_score)}%={crt_good:.4f}"
+    )
+
+    arma_asymmetry.results_biowta.append(crt_res)
+
+# %%
+make_multi_trajectory_plot(
+    arma_asymmetry.results_biowta[0][1],
+    arma_asymmetry.datasets[0],
+    n_traces=25,
+    sliding_kws={"window_size": 5000, "overlap_fraction": 0.8},
+    highlight_idx=10,
+    trace_kws={"alpha": 0.85, "lw": 0.75, "color": "gray"},
+    rug_kws={"alpha": 0.3},
+)
+
+# %%
+for i, crt_res in enumerate(tqdm(arma_asymmetry.results_biowta, desc="dataset")):
+    calculate_asymmetry_measures(crt_res[1], arma_asymmetry.datasets[i])
+
+# %%
+confusion_bias = []
+max_pole_radius = np.zeros((arma_asymmetry.n_datasets, arma_asymmetry.n_models))
+median_pole_radius = np.zeros((arma_asymmetry.n_datasets, arma_asymmetry.n_models))
+min_pole_radius = np.zeros((arma_asymmetry.n_datasets, arma_asymmetry.n_models))
+for i, crt_res in enumerate(arma_asymmetry.results_biowta):
+    crt_diffs = []
+    for crt_asymmetry in crt_res[1].asymmetry:
+        crt_confusion = crt_asymmetry.confusion_ordered
+        crt_confusion_normalized = crt_confusion / crt_confusion.sum(axis=1)
+        crt_diff = crt_confusion_normalized[0, 1] - crt_confusion_normalized[1, 0]
+        crt_diffs.append(crt_diff)
+
+    confusion_bias.append(np.median(crt_diffs))
+
+    crt_armas = arma_asymmetry.arma_pairs[i]
+    crt_pole_radii = [
+        [np.linalg.norm(crt_pole) for crt_pole in _.calculate_poles()]
+        for _ in crt_armas
+    ]
+    
+    crt_max_radii = [np.max(_) for _ in crt_pole_radii]
+    crt_median_radii = [np.median(_) for _ in crt_pole_radii]
+    crt_min_radii = [np.min(_) for _ in crt_pole_radii]
+    
+    max_pole_radius[i, :] = crt_max_radii
+    median_pole_radius[i, :] = crt_median_radii
+    min_pole_radius[i, :] = crt_min_radii
+
+# %%
+with FigureManager(3, 1) as (_, axs):
+    axs[0].scatter(max_pole_radius[:, 0] - max_pole_radius[:, 1], confusion_bias)
+    axs[0].set_xlabel("difference in max pole radii")
+    
+    axs[1].scatter(median_pole_radius[:, 0] - median_pole_radius[:, 1], confusion_bias)
+    axs[1].set_xlabel("difference in median pole radii")
+    
+    axs[2].scatter(min_pole_radius[:, 0] - min_pole_radius[:, 1], confusion_bias)
+    axs[2].set_xlabel("difference in min pole radii")
+
+# %%
+arma_asymmetry.arma_pairs[0]
+
+# %%
+arma_asymmetry.arma_pairs[0][0].calculate_poles()
+
+# %%
+arma_asymmetry.arma_pairs[0][1].calculate_poles()
 
 # %% [markdown]
 # ## SCRATCH
