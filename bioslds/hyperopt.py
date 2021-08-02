@@ -66,6 +66,8 @@ def random_maximize(
                 param_rng[name] = lambda llo=np.log(low), lhi=np.log(high): int(
                     np.round(np.exp(rng.uniform(llo, lhi)))
                 )
+            elif low == high:
+                param_rng[name] = lambda out=low: out
             elif hasattr(rng, "integers"):
                 param_rng[name] = lambda lo=low, hi=high: rng.integers(lo, hi)
             else:
