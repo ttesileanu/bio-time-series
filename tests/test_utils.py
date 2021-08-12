@@ -49,8 +49,7 @@ class TestRleRoundtrip(unittest.TestCase):
 
         rng = np.random.default_rng(2)
         seq_rle0 = [
-            (rng.integers(0, ns), rng.integers(1, max_run + 1))
-            for _ in range(n_rle)
+            (rng.integers(0, ns), rng.integers(1, max_run + 1)) for _ in range(n_rle)
         ]
         # make sure we don't have repeated elements
         last_elem = None
@@ -92,10 +91,52 @@ class TestToHankel(unittest.TestCase):
         y = rng.normal(size=n)
         H = to_hankel(y, p)
 
-        for i in range(n - p):
+        for i in range(n):
             for j in range(p):
                 if i >= j:
                     self.assertAlmostEqual(H[i, j], y[i - j])
+                else:
+                    self.assertEqual(H[i, j], 0)
+
+    def test_output_is_different_when_step_is_nontrivial(self):
+        y = [1, 0, 1, 2, 3, 4, 2, 3, 0.5]
+        p = 3
+
+        H1 = to_hankel(y, p, step=1)
+        H2 = to_hankel(y, p, step=2)
+
+        self.assertFalse(np.allclose(H1, H2))
+
+    def test_default_step_is_one(self):
+        y = [1, 0, 1, 2, 3, 4, 2, 3, 0.5]
+        p = 3
+
+        H1 = to_hankel(y, p)
+        H2 = to_hankel(y, p, step=1)
+
+        np.testing.assert_equal(H1, H2)
+
+    def test_output_has_p_cols_even_for_nontrivial_step(self):
+        y = [1, 0, 1, 2, 3, 4, 2, 3, 0.5]
+        p = 3
+        H = to_hankel(y, p, step=3)
+
+        self.assertEqual(np.shape(H)[1], p)
+
+    def test_output_matches_definition_for_nontrivial_step(self):
+        rng = np.random.default_rng(1)
+
+        n = 50
+        p = 4
+        step = 3
+        y = rng.normal(size=n)
+        H = to_hankel(y, p, step=step)
+
+        for i in range(n):
+            for j in range(p):
+                js = j * step
+                if i >= js:
+                    self.assertAlmostEqual(H[i, j], y[i - js])
                 else:
                     self.assertEqual(H[i, j], 0)
 

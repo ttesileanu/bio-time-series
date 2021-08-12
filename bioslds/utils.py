@@ -47,8 +47,11 @@ def rle_decode(seq_rle: Sequence) -> list:
     return seq
 
 
-def to_hankel(y: Sequence, p: int) -> np.ndarray:
+def to_hankel(y: Sequence, p: int, step: int = 1) -> np.ndarray:
     """ Generate a Hankel matrix from a sequence.
+
+    A generalized version of the Hankel matrix where a non-trivial step is used for the
+    column index can also be generated. See `step`.
 
     Parameters
     ----------
@@ -56,9 +59,12 @@ def to_hankel(y: Sequence, p: int) -> np.ndarray:
         The sequence to convert into a Hankel matrix.
     p
         Order of lag vectors (number of columns in resulting matrix).
+    step
+        Step in the column direction -- see definition below.
 
     Returns a matrix `H` with shape `(len(y), p)` obeying
-        H[i, j] = y[i - j] if i >= j else 0 .
+        H[i, j] = y[i - j * step] if i >= j * step else 0 .
+    Note that this is only strictly a Hankel matrix if `step == 1`.
     """
     n = len(y)
     if p < 1:
@@ -67,6 +73,7 @@ def to_hankel(y: Sequence, p: int) -> np.ndarray:
     H = np.zeros((n, p))
     H[:, 0] = y
     for j in range(1, p):
-        H[j:, j] = y[:-j]
+        js = j * step
+        H[js:, j] = y[:-js]
 
     return H
