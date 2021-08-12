@@ -17,8 +17,9 @@ DATA_RNG=1940
     --normalize \
     --average-dwell 1500 \
     --min-dwell 800 \
-    --rate-range 0.00001 0.05 --rate-log \
-    --exp-streak-range 3.0 150.0 --exp-streak-log \
+    --rate-range 0.000005 0.05 --rate-log \
+    --exp-streak-range 2.0 150.0 --exp-streak-log \
+    --n-features-range 4 150 --n-features-log \
     --economy \
     test_$1.hdf5 vowel ao xcorr \
     > logs/$1.out \
