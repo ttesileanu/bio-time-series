@@ -50,6 +50,8 @@ def run_hyper_optimize(
     timescale_range: tuple,
     timescale_log: bool,
     n_features_log: bool,
+    feature_step_range: tuple,
+    feature_step_log: bool,
     monitor: list,
     monitor_step: int,
     economy: bool,
@@ -66,6 +68,8 @@ def run_hyper_optimize(
         log_scale.append("timescale")
     if n_features_log:
         log_scale.append("n_features")
+    if feature_step_log:
+        log_scale.append("feature_step")
 
     # handle int or tuple n_features
     if not hasattr(n_features, "__len__"):
@@ -95,6 +99,7 @@ def run_hyper_optimize(
                 trans_mat=1 - 1 / kwargs["exp_streak"],
                 temperature=kwargs["temperature"],
                 error_timescale=kwargs["timescale"],
+                fit_kws={"step": kwargs["feature_step"]},
                 **common_hyper_kws,
             )
             if economy:
@@ -112,6 +117,7 @@ def run_hyper_optimize(
                 n_features=kwargs["n_features"],
                 nsm_rate=kwargs["rate"],
                 xcorr_rate=1 / kwargs["exp_streak"],
+                fit_kws={"step": kwargs["feature_step"]},
                 **common_hyper_kws,
             )
             if economy:
@@ -131,6 +137,7 @@ def run_hyper_optimize(
             "temperature": temperature_range,
             "timescale": timescale_range,
             "n_features": n_features_range,
+            "feature_step": feature_step_range,
         },
         n_trials,
         log_scale=log_scale,
@@ -295,6 +302,19 @@ if __name__ == "__main__":
         help="sample number of features in log space (rounded to int)",
     )
     parser.add_argument(
+        "--feature-step-range",
+        type=int,
+        nargs=2,
+        default=(1, 1),
+        help="range of steps between features in lag vector",
+    )
+    parser.add_argument(
+        "--feature-step-log",
+        action="store_true",
+        default=False,
+        help="sample feature step in log space (rounded to int)",
+    )
+    parser.add_argument(
         "--store-signal-set",
         action="store_true",
         default=False,
@@ -388,6 +408,8 @@ if __name__ == "__main__":
         timescale_range=main_args.timescale_range,
         timescale_log=main_args.timescale_log,
         n_features_log=main_args.n_features_log,
+        feature_step_range=main_args.feature_step_range,
+        feature_step_log=main_args.feature_step_log,
         monitor=main_args.monitor,
         monitor_step=main_args.monitor_step,
         economy=main_args.economy,
