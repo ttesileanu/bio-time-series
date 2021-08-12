@@ -162,6 +162,49 @@ class TestTransformAR(unittest.TestCase):
 
         np.testing.assert_allclose(X_bias, X_bias_exp)
 
+    def test_X_values_correct_with_nontrivial_step_no_bias(self):
+        rng = np.random.default_rng(1)
+
+        n = 57
+        y = rng.normal(size=n)
+
+        p = 4
+        step = 2
+        regressor = mock.Mock(n_features=p)
+        transform_ar(regressor, y, bias=False, step=step)
+
+        call_args = regressor.transform.call_args[0]
+
+        expected_X = np.zeros((len(y) - p * step, p))
+        for i in range(len(y) - p * step):
+            for j in range(p):
+                expected_X[i, j] = y[i - j * step + p * step - 1]
+
+        np.testing.assert_allclose(call_args[0], expected_X)
+
+    def test_X_values_augmented_by_constant_when_bias_is_true_and_nontrivial_step(self):
+        rng = np.random.default_rng(2)
+
+        n = 52
+        y = rng.normal(size=n)
+
+        p = 5
+        step = 3
+        regressor1 = mock.Mock(n_features=p)
+        regressor2 = mock.Mock(n_features=p + 1)
+
+        transform_ar(regressor1, y, bias=False, step=step)
+        transform_ar(regressor2, y, bias=True, step=step)
+
+        call_args1 = regressor1.transform.call_args[0]
+        call_args2 = regressor2.transform.call_args[0]
+
+        X = call_args1[0]
+        X_bias = call_args2[0]
+        X_bias_exp = np.hstack((X, np.ones((len(X), 1))))
+
+        np.testing.assert_allclose(X_bias, X_bias_exp)
+
 
 if __name__ == "__main__":
     unittest.main()

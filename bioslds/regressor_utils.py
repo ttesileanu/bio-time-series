@@ -7,7 +7,9 @@ from bioslds.utils import to_hankel
 from typing import Sequence, Any
 
 
-def transform_ar(regressor: Any, y: Sequence, bias: bool = False, **kwargs) -> Any:
+def transform_ar(
+    regressor: Any, y: Sequence, bias: bool = False, step: int = 1, **kwargs
+) -> Any:
     """ Use a regression model to infer autoregressive parameters.
 
     This is a convenience function that uses `utils.to_hankel` to generate values for
@@ -30,6 +32,10 @@ def transform_ar(regressor: Any, y: Sequence, bias: bool = False, **kwargs) -> A
     length of the output will be `len(y) - p` instead of the `len(y)` samples typically
     returned by `regressor.transform`.
 
+    If `step` is set to a value different from 1, then the lags can be spaced out
+    further, e.g.,
+        no bias:    y[t] \approx sum(w[i] * y[t - i * step - 1] for i in range(p))
+
     Parameters
     ----------
     regressor
@@ -41,17 +47,20 @@ def transform_ar(regressor: Any, y: Sequence, bias: bool = False, **kwargs) -> A
     bias
         If true, a constant predictor is added, to model autoregressive processes with
         non-zero mean
+    step
+        Step between consecutive lags. Passed directly to `utils.to_hankel`.
     All other keyword arguments are passed directly to `regressor.transform`.
 
     Returns the output from `regressor.transform(Xar, yar)` called with `yar = y[p:]`
-    and the matrix `Xar` of calculated lag vectors. Note that the first `p` samples of
-    `y` don't have a well-defined lag vector, and so no inference is run for these
-    samples (though they are used for the inference of subsequent samples).
+    (or `yar = y[p * step:]` if `step != 1`) and the matrix `Xar` of calculated lag
+    vectors. Note that the first `p` (or `p * step`) samples of `y` do not have a
+    well-defined lag vector, and so no inference is run for these samples (though they
+    are used for the inference of subsequent samples).
     """
     p = regressor.n_features - (1 if bias else 0)
-    X = to_hankel(y, p)
+    X = to_hankel(y, p, step=step)
 
     if bias:
         X = np.hstack((X, np.ones((len(X), 1))))
 
-    return regressor.transform(X[p - 1: -1], y[p:], **kwargs)
+    return regressor.transform(X[p * step - 1 : -1], y[p * step:], **kwargs)
