@@ -10,7 +10,7 @@ DATA_RNG=1940
 
 ./run_hyper_snippets.py \
     -n50 \
-    --n-features 3 \
+    --n-features 4 \
     --n-signals 200 \
     -d$DATA_RNG \
     -c$1 \
