@@ -457,6 +457,7 @@ if __name__ == "__main__":
                 if main_args.store_signal_set:
                     hyper_dataset[-1].hdf_skip_contents = False
         hyper_dataset = StringedDatasets(hyper_dataset)
+        hyper_dataset.hdf_skip_contents = True
 
     # run the hyper optimization
     n_feat = main_args.n_features
