@@ -7,7 +7,7 @@ import pickle
 import tqdm
 import h5py
 
-from typing import Tuple, Union
+from typing import Tuple, Union, Sequence
 
 from bioslds.regressors import BioWTARegressor, CrosscorrelationRegressor
 from bioslds.batch import hyper_score_ar
@@ -174,6 +174,51 @@ def save_results(outfile: str, res: dict, force: bool):
         write_object_hierarchy(f, res)
 
 
+class StringedDatasetsIterator(object):
+    def __init__(self, datasets: Sequence):
+        self.idx = 0
+        self.datasets = datasets
+        self._starts = [len(self.datasets[0])]
+        for dataset in self.datasets[1:]:
+            self._starts.append(self._starts[-1] + len(dataset))
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.idx >= self._starts[-1]:
+            self.idx = 0
+            raise StopIteration
+    
+        # find which dataset we're in
+        for m, start in enumerate(self._starts):
+            if start > self.idx:
+                start = self._starts[m - 1] if m > 0 else 0
+                break
+        
+        # find index in dataset
+        i = self.idx - start
+
+        self.idx += 1
+        return self.datasets[m][i]
+            
+
+
+class StringedDatasets(object):
+    def __init__(self, datasets: Sequence):
+        self.datasets = datasets
+        self._len = sum(len(_) for _ in self.datasets)
+        
+        # this is only to establish n_models in run_hyper_optimize
+        self.snippets = ([], [])
+
+    def __iter__(self) -> StringedDatasetsIterator:
+        return StringedDatasetsIterator(self.datasets)
+
+    def __len__(self) -> int:
+        return self._len
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Run hyperparameter optimization for randomly generated datasets "
@@ -183,7 +228,9 @@ if __name__ == "__main__":
     parser.add_argument("outfile", help="where to save the results (HDF5)")
     parser.add_argument("snip_type", help="snippet dataset (vowel or pitch)")
     parser.add_argument(
-        "snip_choice", help="snippets to use (aeiou for vowel, cdefgab for pitch)"
+        "snip_choice", help="snippets to use (aeiou for vowel, cdefgab for "
+        "pitch; all_pairs to use all pairs -- note that then the actual number of"
+        "signals becomes n_signals * n_pairs)"
     )
     parser.add_argument("algorithm", help="algorithm to use (biowta or xcorr)")
 
@@ -375,18 +422,41 @@ if __name__ == "__main__":
             main_args.optimizer = 0
 
     # generate dataset
-    snippets = load_snippets(main_args.snip_type, main_args.snip_choice)
-    hyper_dataset = RandomSnippetDataset(
-        main_args.n_signals,
-        main_args.n_samples,
-        snippets,
-        dwell_times=main_args.average_dwell,
-        min_dwell=main_args.min_dwell,
-        normalize=main_args.normalize,
-        rng=main_args.dataset,
-    )
-    if main_args.store_signal_set:
-        hyper_dataset.hdf_skip_contents = False
+    if main_args.snip_choice == "all_pairs":
+        snip_names = {"vowel": "aeiou", "pitch": "cdefgab"}[main_args.snip_type]
+    else:
+        snip_names = main_args.snip_choice
+        
+    snippets = load_snippets(main_args.snip_type, snip_names)
+
+    if main_args.snip_choice != "all_pairs":
+        hyper_dataset = RandomSnippetDataset(
+            main_args.n_signals,
+            main_args.n_samples,
+            snippets,
+            dwell_times=main_args.average_dwell,
+            min_dwell=main_args.min_dwell,
+            normalize=main_args.normalize,
+            rng=main_args.dataset,
+        )
+        if main_args.store_signal_set:
+            hyper_dataset.hdf_skip_contents = False
+    else:
+        hyper_dataset = []
+        for i in range(len(snip_names)):
+            for j in range(i + 1, len(snip_names)):
+                hyper_dataset.append(RandomSnippetDataset(
+                    main_args.n_signals,
+                    main_args.n_samples,
+                    [snippets[i], snippets[j]],
+                    dwell_times=main_args.average_dwell,
+                    min_dwell=main_args.min_dwell,
+                    normalize=main_args.normalize,
+                    rng=main_args.dataset,
+                ))
+                if main_args.store_signal_set:
+                    hyper_dataset[-1].hdf_skip_contents = False
+        hyper_dataset = StringedDatasets(hyper_dataset)
 
     # run the hyper optimization
     n_feat = main_args.n_features
