@@ -52,6 +52,8 @@ def run_hyper_optimize(
     timescale_range: tuple,
     timescale_log: bool,
     cepstral_order_range: tuple,
+    feature_step_range: tuple,
+    feature_step_log: bool,
     monitor: list,
     monitor_step: int,
     economy: bool,
@@ -66,6 +68,8 @@ def run_hyper_optimize(
         log_scale.append("temperature")
     if timescale_log:
         log_scale.append("timescale")
+    if feature_step_log:
+        log_scale.append("feature_step")
 
     # choose some common options used for all algorithms when calling hyper_score_ar
     common_hyper_args = (dataset, unordered_accuracy_score)
@@ -89,6 +93,7 @@ def run_hyper_optimize(
                 trans_mat=1 - 1 / kwargs["exp_streak"],
                 temperature=kwargs["temperature"],
                 error_timescale=kwargs["timescale"],
+                fit_kws={"step": kwargs["feature_step"]},
                 **common_hyper_kws,
             )
             if economy:
@@ -105,6 +110,7 @@ def run_hyper_optimize(
                 *common_hyper_args,
                 nsm_rate=kwargs["rate"],
                 xcorr_rate=1 / kwargs["exp_streak"],
+                fit_kws={"step": kwargs["feature_step"]},
                 **common_hyper_kws,
             )
             if economy:
@@ -122,6 +128,7 @@ def run_hyper_optimize(
                 initial_weights="oracle_ar",
                 cepstral_order=kwargs["cepstral_order"],
                 cepstral_kws={"rate": kwargs["rate"]},
+                fit_kws={"step": kwargs["feature_step"]},
                 **common_hyper_kws,
             )
             if economy:
@@ -141,6 +148,7 @@ def run_hyper_optimize(
             "temperature": temperature_range,
             "timescale": timescale_range,
             "cepstral_order": cepstral_order_range,
+            "feature_step": feature_step_range,
         },
         n_trials,
         log_scale=log_scale,
@@ -295,6 +303,19 @@ if __name__ == "__main__":
         help="range for cepstral order (lower = inclusive, upper = exclusive)",
     )
     parser.add_argument(
+        "--feature-step-range",
+        type=int,
+        nargs=2,
+        default=(1, 1),
+        help="range of steps between features in lag vector",
+    )
+    parser.add_argument(
+        "--feature-step-log",
+        action="store_true",
+        default=False,
+        help="sample feature step in log space (rounded to int)",
+    )
+    parser.add_argument(
         "--store-signal-set",
         action="store_true",
         default=False,
@@ -400,6 +421,8 @@ if __name__ == "__main__":
         timescale_range=main_args.timescale_range,
         timescale_log=main_args.timescale_log,
         cepstral_order_range=main_args.cepstral_order_range,
+        feature_step_range=main_args.feature_step_range,
+        feature_step_log=main_args.feature_step_log,
         monitor=main_args.monitor,
         monitor_step=main_args.monitor_step,
         economy=main_args.economy,
