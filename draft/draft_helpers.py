@@ -38,6 +38,10 @@ def make_multi_trajectory_plot(
     fig_kws: Optional[dict] = None,
     rug_kws: Optional[dict] = None,
     kde_kws: Optional[dict] = None,
+    axs: Optional[Sequence] = None,
+    show_trajectories: bool = True,
+    show_score_pdf: bool = True,
+    show_time_pdf: bool = True,
 ) -> Tuple:
     # handle defaults
     if sliding_kws is None:
@@ -67,12 +71,18 @@ def make_multi_trajectory_plot(
     despine_kws = fig_kws.pop("despine_kws", {"offset": 5})
 
     with plt.style.context(paper_style):
-        fig = plt.figure(**fig_kws)
-        axs = np.empty((2, 3), dtype=object)
-        axs[0, 0] = fig.add_axes([0.09, 0.62, 0.42, 0.34])
-        axs[0, 1] = fig.add_axes([0.52, 0.62, 0.07, 0.34])
-        axs[0, 2] = fig.add_axes([0.69, 0.22, 0.29, 0.74])
-        axs[1, 0] = fig.add_axes([0.09, 0.22, 0.42, 0.23])
+        if axs is None:
+            fig = plt.figure(**fig_kws)
+            axs = np.empty((2, 3), dtype=object)
+            axs[0, 0] = fig.add_axes([0.09, 0.62, 0.42, 0.34])
+            axs[0, 1] = fig.add_axes([0.52, 0.62, 0.07, 0.34])
+            axs[0, 2] = fig.add_axes([0.69, 0.22, 0.29, 0.74])
+            axs[1, 0] = fig.add_axes([0.09, 0.22, 0.42, 0.23])
+
+            given_axs = False
+        else:
+            fig = None
+            given_axs = True
 
         # calculate rolling accuracy scores, unless they exist already
         if not hasattr(results, "rolling_scores"):
@@ -112,9 +122,10 @@ def make_multi_trajectory_plot(
             trace_kws["c"] = "C0"
         trace_color = trace_kws.get("color", trace_kws.get("c"))
         trace_kws.setdefault("alpha", 0.5)
-        for idx, crt_rolling in enumerate(results.rolling_scores):
-            if idx in trace_idxs:
-                axs[0, 0].plot(*crt_rolling, **trace_kws)
+        if show_trajectories:
+            for idx, crt_rolling in enumerate(results.rolling_scores):
+                if idx in trace_idxs:
+                    axs[0, 0].plot(*crt_rolling, **trace_kws)
 
         if highlight_idx is not None:
             # using different color for highlight
@@ -135,82 +146,100 @@ def make_multi_trajectory_plot(
                 trace_kws["alpha"] = 1.0
             for h_idx, crt_idx in enumerate(highlight_idx):
                 trace_kws["c"] = f"C{h_idx}"
-                axs[0, 0].plot(*results.rolling_scores[crt_idx], **trace_kws)
+                if show_trajectories:
+                    axs[0, 0].plot(*results.rolling_scores[crt_idx], **trace_kws)
 
-        axs[0, 0].set_xlim(0, np.max(crt_rolling[0]))
-        axs[0, 0].set_ylim(0.5, 1.0)
-        axs[0, 0].set_xlabel("time step")
-        axs[0, 0].set_ylabel("seg. score")
-        axs[0, 0].set_xticks([])
+        if show_trajectories:
+            axs[0, 0].set_xlim(0, np.max(crt_rolling[0]))
+            axs[0, 0].set_ylim(0.5, 1.0)
+            axs[0, 0].set_xlabel("time step")
+            axs[0, 0].set_ylabel("seg. score")
+            axs[0, 0].set_xticks([])
 
         # draw the distribution of final accuracy scores
         kde_kws.setdefault("shade", True)
         kde_kws.setdefault("color", trace_color)
-        sns.kdeplot(y=results.trial_scores, ax=axs[0, 1], **kde_kws)
+        if show_score_pdf:
+            sns.kdeplot(y=results.trial_scores, ax=axs[0, 1], **kde_kws)
 
         rug_kws.setdefault("height", 0.1)
         rug_kws.setdefault("lw", 0.5)
-        sns.rugplot(y=results.trial_scores, color=trace_color, ax=axs[0, 1], **rug_kws)
+        if show_score_pdf:
+            sns.rugplot(
+                y=results.trial_scores, color=trace_color, ax=axs[0, 1], **rug_kws
+            )
         if highlight_idx is not None:
             highlight_rug_kws = copy.copy(rug_kws)
             highlight_rug_kws["alpha"] = 1.0
             highlight_rug_kws["lw"] = 2 * rug_kws["lw"]
-            for h_idx, crt_idx in enumerate(highlight_idx):
-                sns.rugplot(
-                    y=[results.trial_scores[crt_idx]],
-                    color=f"C{h_idx}",
-                    ax=axs[0, 1],
-                    **highlight_rug_kws,
-                )
+            if show_score_pdf:
+                for h_idx, crt_idx in enumerate(highlight_idx):
+                    sns.rugplot(
+                        y=[results.trial_scores[crt_idx]],
+                        color=f"C{h_idx}",
+                        ax=axs[0, 1],
+                        **highlight_rug_kws,
+                    )
 
-        axs[0, 1].set_ylim(0.5, 1.0)
-        axs[0, 1].set_xticks([])
-        axs[0, 1].set_xlabel("pdf")
+        if show_score_pdf:
+            axs[0, 1].set_ylim(0.5, 1.0)
+            axs[0, 1].set_xticks([])
+            axs[0, 1].set_xlabel("pdf")
 
         # draw the distribution of convergence times
-        sns.kdeplot(x=results.convergence_times, ax=axs[1, 0], **kde_kws)
+        if show_time_pdf:
+            sns.kdeplot(x=results.convergence_times, ax=axs[1, 0], **kde_kws)
 
         rug_kws["height"] = 0.75 * rug_kws["height"]
-        sns.rugplot(
-            x=results.convergence_times, color=trace_color, ax=axs[1, 0], **rug_kws
-        )
+        if show_time_pdf:
+            sns.rugplot(
+                x=results.convergence_times, color=trace_color, ax=axs[1, 0], **rug_kws
+            )
         if highlight_idx is not None:
             highlight_rug_kws = copy.copy(rug_kws)
             highlight_rug_kws["alpha"] = 1.0
             highlight_rug_kws["lw"] = 2 * rug_kws["lw"]
-            for h_idx, crt_idx in enumerate(highlight_idx):
-                sns.rugplot(
-                    x=[results.convergence_times[crt_idx]],
-                    color=f"C{h_idx}",
-                    ax=axs[1, 0],
-                    **highlight_rug_kws,
-                )
+            if show_time_pdf:
+                for h_idx, crt_idx in enumerate(highlight_idx):
+                    sns.rugplot(
+                        x=[results.convergence_times[crt_idx]],
+                        color=f"C{h_idx}",
+                        ax=axs[1, 0],
+                        **highlight_rug_kws,
+                    )
 
-        axs[1, 0].set_xlim(0, np.max(crt_rolling[0]))
-        # axs[1, 0].set_xlabel("time step")
-        axs[1, 0].set_xlabel("convergence time")
-        axs[1, 0].set_ylabel("pdf")
-        # axs[1, 0].annotate(
-        #     "convergence time",
-        #     xy=(0.5, 0.98),
-        #     xycoords="axes fraction",
-        #     horizontalalignment="center",
-        #     verticalalignment="top",
-        #     fontsize=plt.rcParams["axes.titlesize"],
-        #     fontweight=plt.rcParams["axes.titleweight"],
-        # )
-        axs[1, 0].set_yticks([])
+        if show_time_pdf:
+            axs[1, 0].set_xlim(0, np.max(crt_rolling[0]))
+            # axs[1, 0].set_xlabel("time step")
+            axs[1, 0].set_xlabel("convergence time")
+            axs[1, 0].set_ylabel("pdf")
+            # axs[1, 0].annotate(
+            #     "convergence time",
+            #     xy=(0.5, 0.98),
+            #     xycoords="axes fraction",
+            #     horizontalalignment="center",
+            #     verticalalignment="top",
+            #     fontsize=plt.rcParams["axes.titlesize"],
+            #     fontweight=plt.rcParams["axes.titleweight"],
+            # )
+            axs[1, 0].set_yticks([])
 
-        axs[1, 0].patch.set_alpha(0)
+            axs[1, 0].patch.set_alpha(0)
 
-        axs[0, 0].set_xticks([])
-        axs[0, 1].set_yticks([])
-        axs[0, 2].set_visible(False)
+        if show_trajectories:
+            axs[0, 0].set_xticks([])
+            sns.despine(ax=axs[0, 0], **despine_kws)
 
-        sns.despine(ax=axs[0, 0], **despine_kws)
-        sns.despine(left=True, ax=axs[0, 1], **despine_kws)
-        sns.despine(ax=axs[0, 2], **despine_kws)
-        sns.despine(ax=axs[1, 0], **despine_kws)
+        if show_score_pdf:
+            axs[0, 1].set_yticks([])
+            sns.despine(left=True, ax=axs[0, 1], **despine_kws)
+
+        if show_time_pdf:
+            sns.despine(ax=axs[1, 0], **despine_kws)
+
+        if not given_axs:
+            axs[0, 2].set_visible(False)
+            sns.despine(ax=axs[0, 2], **despine_kws)
 
     return fig, axs
 
@@ -279,6 +308,8 @@ def make_accuracy_comparison_diagram(
     line_kws: Optional[dict] = None,
     color_cycle: Optional[Sequence] = None,
     score_type: str = "segmentation",
+    highlight_idxs: Optional[Sequence] = None,
+    highlight_colors: Optional[Sequence] = None,
 ):
     """ score_type can be "segmentation" or "weight". """
     # handle defaults
@@ -312,7 +343,7 @@ def make_accuracy_comparison_diagram(
         if color_cycle is None:
             crt_color = f"C{i}"
         else:
-            crt_color = color_cycle[i % len(results)]
+            crt_color = color_cycle[i % len(color_cycle)]
         ax.plot(i * np.ones(n), crt_scores, c=crt_color, **crt_kws)
 
         if prev_scores is not None:
@@ -323,13 +354,53 @@ def make_accuracy_comparison_diagram(
                 crt_kws["ls"] = "-"
             if "lw" not in crt_kws and "linewidth" not in crt_kws:
                 crt_kws["lw"] = 0.5
-            crt_kws.setdefault("alpha", 0.5)
+            crt_kws.setdefault("alpha", 0.1)
             ax.plot(
                 np.row_stack(((i - 1) * np.ones(n), i * np.ones(n))),
                 np.row_stack((prev_scores, crt_scores)),
                 **crt_kws,
             )
         prev_scores = crt_scores
+
+    # draw the highlighted runs, if any
+    if highlight_idxs is None:
+        highlight_idxs = []
+
+    crt_kws = copy.copy(dash_kws)
+    if "ls" not in crt_kws and "linestyle" not in crt_kws:
+        crt_kws["ls"] = "none"
+    if "ms" not in crt_kws and "markersize" not in crt_kws:
+        crt_kws["ms"] = 10
+    if "mew" not in crt_kws and "markeredgewidth" not in crt_kws:
+        crt_kws["mew"] = 2
+    crt_kws["mew"] = 2 * crt_kws["mew"]
+    crt_kws.setdefault("marker", "_")
+    crt_kws.setdefault("alpha", 1.0)
+
+    crt_kws_lines = copy.copy(line_kws)
+    if "ls" not in crt_kws_lines and "linestyle" not in crt_kws_lines:
+        crt_kws_lines["ls"] = "-"
+    if "lw" not in crt_kws_lines and "linewidth" not in crt_kws_lines:
+        crt_kws_lines["lw"] = 0.5
+    crt_kws_lines.setdefault("alpha", 1.0)
+
+    crt_kws_lines["lw"] = 2 * crt_kws_lines["lw"]
+
+    for k, idx in enumerate(highlight_idxs):
+        if highlight_colors is None:
+            crt_color = f"C{k}"
+        else:
+            crt_color = highlight_colors[k % len(highlight_idxs)]
+
+        for i, crt_res in enumerate(results):
+            crt_score = crt_res[1].trial_scores[idx]
+            ax.plot([i], [crt_score], c=crt_color, **crt_kws)
+
+            if i > 0:
+                prev_score = results[i - 1][1].trial_scores[idx]
+                ax.plot(
+                    [i - 1, i], [prev_score, crt_score], c=crt_color, **crt_kws_lines
+                )
 
     ax.set_xticks(np.arange(len(results)))
     ax.set_xticklabels(result_names)
