@@ -14,6 +14,9 @@
 # ---
 
 # %%
+# %load_ext autoreload
+# %autoreload 2
+
 # %matplotlib inline
 # %config InlineBackend.print_figure_kwargs = {'bbox_inches': None}
 
@@ -96,51 +99,51 @@ dataset = RandomArmaDataset(
 # %%
 biowta_configurations = {
     (1, 1, 0): {
-        "rate": 0.005460,
-        "trans_mat": 1 - 1 / 6.792138,
-        "temperature": 0.961581,
+        "rate": 0.001992,
+        "trans_mat": 1 - 1 / 7.794633,
+        "temperature": 1.036228,
         "error_timescale": 1.000000,
     },
     (0, 0, 1): {
-        "rate": 0.004187,
+        "rate": 0.004718,
         "trans_mat": 1 - 1 / 2.000000,
         "temperature": 0.000000,
-        "error_timescale": 3.937542,
+        "error_timescale": 4.216198,
     },
     (1, 1, 1): {
-        "rate": 0.001664,
-        "trans_mat": 1 - 1 / 4.635351,
-        "temperature": 0.629294,
-        "error_timescale": 1.217550,
+        "rate": 0.004130,
+        "trans_mat": 1 - 1 / 5.769690,
+        "temperature": 0.808615,
+        "error_timescale": 1.470822,
     },
     (0, 1, 1): {
-        "rate": 0.003013,
-        "trans_mat": 1 - 1 / 2.179181,
+        "rate": 0.004826,
+        "trans_mat": 1 - 1 / 2.154856,
         "temperature": 0.000000,
-        "error_timescale": 2.470230,
+        "error_timescale": 4.566321,
     },
     (1, 0, 1): {
-        "rate": 0.005444,
+        "rate": 0.006080,
         "trans_mat": 1 - 1 / 2.000000,
-        "temperature": 0.062365,
-        "error_timescale": 3.842287,
+        "temperature": 0.117712,
+        "error_timescale": 4.438448,
     },
     (0, 1, 0): {
-        "rate": 0.001906,
-        "trans_mat": 1 - 1 / 2.852480,
+        "rate": 0.001476,
+        "trans_mat": 1 - 1 / 2.984215,
         "temperature": 0.000000,
         "error_timescale": 1.000000,
     },
     (0, 0, 0): {
-        "rate": 0.005638,
+        "rate": 0.001199,
         "trans_mat": 1 - 1 / 2.000000,
         "temperature": 0.000000,
         "error_timescale": 1.000000,
     },
     (1, 0, 0): {
-        "rate": 0.000394,
+        "rate": 0.005084,
         "trans_mat": 1 - 1 / 2.000000,
-        "temperature": 0.008065,
+        "temperature": 0.011821,
         "error_timescale": 1.000000,
     },
 }
@@ -610,6 +613,26 @@ with plt.style.context(paper_style):
             ],
             ["plain BioWTA", "autocorrelation", "enhanced BioWTA", "cepstral"],
             color_cycle=["C0", "C2", "C3", "C1"],
+        )
+    ax.tick_params(axis="x", labelsize=8)
+
+# fig.savefig(os.path.join(fig_path, "algo_comparisons.pdf"))
+
+# %%
+with plt.style.context(paper_style):
+    with FigureManager(despine_kws={"offset": 5}, figsize=(5.76, 3)) as (fig, ax):
+        make_accuracy_comparison_diagram(
+            ax,
+            [
+                result_biowta_mods[0, 0, 0],
+                result_xcorr,
+                result_biowta_chosen,
+                result_cepstral,
+            ],
+            ["plain BioWTA", "autocorrelation", "enhanced BioWTA", "cepstral"],
+            color_cycle=["#BBBBBB"],
+            highlight_idxs=good_idxs,
+            highlight_colors=["C0", "C1"],
         )
     ax.tick_params(axis="x", labelsize=8)
 
