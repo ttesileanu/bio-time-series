@@ -31,6 +31,13 @@ from tqdm.notebook import tqdm
 from bioslds.hdf import read_namespace_hierarchy
 from bioslds.plotting import FigureManager, colorbar
 
+# %%
+fig_path = os.path.join("..", "..", "figs", "draft")
+paper_style = [
+    "seaborn-paper",
+    {"font.size": 8, "axes.labelsize": 8, "xtick.labelsize": 6, "ytick.labelsize": 6},
+]
+
 
 # %% [markdown]
 # ## Useful definitions
@@ -105,90 +112,212 @@ def make_summary_figure(
 
     # make the figure
     n_keys = len(keys)
-    with FigureManager(n_keys, n_keys, squeeze=False) as (fig, axs):
-        # draw histograms on the diagonal
-        for i in range(n_keys):
-            ax = axs[i, i]
+    with plt.style.context(paper_style):
+        with FigureManager(
+            n_keys,
+            n_keys,
+            squeeze=False,
+            figsize=(5.76, 3 * 5.76 / 4),
+            despine_kws={"offset": 5},
+        ) as (fig, axs):
+            # draw histograms on the diagonal
+            for i in range(n_keys):
+                ax = axs[i, i]
 
-            crt_values = values[keys[i]]
-            sns.histplot(
-                crt_values,
-                element="step",
-                stat="density",
-                alpha=0.3,
-                color="C0",
-                log_scale=keys[i] in log_scale,
-                ax=ax,
-            )
-
-            # now draw the high-scoring values
-            crt_highscore_values = crt_values[highscore_idxs]
-            sns.kdeplot(
-                crt_highscore_values,
-                color="C1",
-                log_scale=keys[i] in log_scale,
-                shade=True,
-                label=f"highest {int(top_fraction * 100)}% of scores",
-                ax=ax,
-            )
-            sns.rugplot(
-                crt_highscore_values, height=0.05, c="C1", lw=0.5, ax=ax,
-            )
-
-            ax.legend(frameon=False)
-            ax.set_xlabel(keys[i])
-
-            ax.set_xlim(np.min(crt_values), np.max(crt_values))
-
-        # now the off-diagonals
-        for i in range(n_keys):
-            crt_values1 = values[keys[i]]
-            crt_highscore_values1 = crt_values1[highscore_idxs]
-            for j in range(n_keys):
-                if j == i:
-                    continue
-
-                crt_values2 = values[keys[j]]
-                crt_highscore_values2 = crt_values2[highscore_idxs]
-
-                ax = axs[i, j]
-
-                h = ax.scatter(
-                    crt_values1,
-                    crt_values2,
-                    c=scores,
-                    cmap="Greys",
-                    vmin=vmin,
-                    vmax=vmax,
+                crt_values = values[keys[i]]
+                sns.histplot(
+                    crt_values,
+                    element="step",
+                    stat="density",
                     alpha=0.2,
-                    ec=None,
+                    color="gray",
+                    log_scale=keys[i] in log_scale,
+                    label="all random trials",
+                    ax=ax,
                 )
 
-                # now the high-scoring set
-                h = ax.scatter(
-                    crt_highscore_values1,
-                    crt_highscore_values2,
-                    c=highscores,
-                    cmap="Reds",
-                    vmin=vmin,
-                    # vmax=np.max(highscores),
-                    alpha=0.7,
-                    ec=None,
+                # now draw the high-scoring values
+                crt_highscore_values = crt_values[highscore_idxs]
+                sns.kdeplot(
+                    crt_highscore_values,
+                    color="C1",
+                    log_scale=keys[i] in log_scale,
+                    shade=True,
+                    label=f"best {int(top_fraction * 100)}%",
+                    ax=ax,
+                )
+                sns.rugplot(
+                    crt_highscore_values, height=0.05, c="C1", lw=0.5, ax=ax,
                 )
 
+                ax.legend(frameon=False, fontsize=6, loc="upper left")
                 ax.set_xlabel(keys[i])
-                ax.set_ylabel(keys[j])
+                ax.set_ylabel("pdf")
 
-                if keys[i] in log_scale:
-                    ax.set_xscale("log")
-                if keys[j] in log_scale:
-                    ax.set_yscale("log")
+                ax.set_xlim(np.min(crt_values), np.max(crt_values))
 
-                ax.set_xlim(np.min(crt_values1), np.max(crt_values1))
-                ax.set_ylim(np.min(crt_values2), np.max(crt_values2))
+            # now the off-diagonals
+            for i in range(n_keys):
+                crt_values1 = values[keys[i]]
+                crt_highscore_values1 = crt_values1[highscore_idxs]
+                for j in range(n_keys):
+                    if j == i:
+                        continue
+
+                    crt_values2 = values[keys[j]]
+                    crt_highscore_values2 = crt_values2[highscore_idxs]
+
+                    ax = axs[j, i]
+
+                    h = ax.scatter(
+                        crt_values1,
+                        crt_values2,
+                        c=scores,
+                        cmap="Greys",
+                        vmin=vmin,
+                        vmax=vmax,
+                        alpha=0.2,
+                        ec=None,
+                    )
+
+                    # now the high-scoring set
+                    h = ax.scatter(
+                        crt_highscore_values1,
+                        crt_highscore_values2,
+                        c=highscores,
+                        cmap="Reds",
+                        vmin=vmin,
+                        # vmax=np.max(highscores),
+                        alpha=0.7,
+                        ec=None,
+                    )
+
+                    ax.set_xlabel(keys[i])
+                    ax.set_ylabel(keys[j])
+
+                    if keys[i] in log_scale:
+                        ax.set_xscale("log")
+                    if keys[j] in log_scale:
+                        ax.set_yscale("log")
+
+                    ax.set_xlim(np.min(crt_values1), np.max(crt_values1))
+                    ax.set_ylim(np.min(crt_values2), np.max(crt_values2))
 
     return fig, axs
 
+
+# %%
+# def make_summary_figure(
+#     values: dict,
+#     fct_key: str = "fct",
+#     top_fraction: float = 0.01,
+#     log_scale: Optional[Sequence] = None,
+#     vmin: float = 0.5,
+#     vmax: float = 1.0,
+# ) -> Tuple[plt.Figure, Sequence]:
+#     if log_scale is None:
+#         log_scale = []
+
+#     # keep only the keys that have some variation and are not scores
+#     keys = [
+#         key
+#         for key in values.keys()
+#         if not key.startswith("fct") and np.std(values[key]) > 0
+#     ]
+
+#     # identify the top 5% highest scores
+#     scores = values[fct_key]
+
+#     n = len(scores)
+#     n_highscore = max(1, int(np.round(top_fraction * n)))
+#     highscore_idxs = np.argsort(scores)[-n_highscore:]
+#     highscores = scores[highscore_idxs]
+
+#     # make the figure
+#     n_keys = len(keys)
+#     with FigureManager(n_keys, n_keys, squeeze=False) as (fig, axs):
+#         # draw histograms on the diagonal
+#         for i in range(n_keys):
+#             ax = axs[i, i]
+
+#             crt_values = values[keys[i]]
+#             sns.histplot(
+#                 crt_values,
+#                 element="step",
+#                 stat="density",
+#                 alpha=0.3,
+#                 color="C0",
+#                 log_scale=keys[i] in log_scale,
+#                 ax=ax,
+#             )
+
+#             # now draw the high-scoring values
+#             crt_highscore_values = crt_values[highscore_idxs]
+#             sns.kdeplot(
+#                 crt_highscore_values,
+#                 color="C1",
+#                 log_scale=keys[i] in log_scale,
+#                 shade=True,
+#                 label=f"highest {int(top_fraction * 100)}% of scores",
+#                 ax=ax,
+#             )
+#             sns.rugplot(
+#                 crt_highscore_values, height=0.05, c="C1", lw=0.5, ax=ax,
+#             )
+
+#             ax.legend(frameon=False)
+#             ax.set_xlabel(keys[i])
+
+#             ax.set_xlim(np.min(crt_values), np.max(crt_values))
+
+#         # now the off-diagonals
+#         for i in range(n_keys):
+#             crt_values1 = values[keys[i]]
+#             crt_highscore_values1 = crt_values1[highscore_idxs]
+#             for j in range(n_keys):
+#                 if j == i:
+#                     continue
+
+#                 crt_values2 = values[keys[j]]
+#                 crt_highscore_values2 = crt_values2[highscore_idxs]
+
+#                 ax = axs[i, j]
+
+#                 h = ax.scatter(
+#                     crt_values1,
+#                     crt_values2,
+#                     c=scores,
+#                     cmap="Greys",
+#                     vmin=vmin,
+#                     vmax=vmax,
+#                     alpha=0.2,
+#                     ec=None,
+#                 )
+
+#                 # now the high-scoring set
+#                 h = ax.scatter(
+#                     crt_highscore_values1,
+#                     crt_highscore_values2,
+#                     c=highscores,
+#                     cmap="Reds",
+#                     vmin=vmin,
+#                     # vmax=np.max(highscores),
+#                     alpha=0.7,
+#                     ec=None,
+#                 )
+
+#                 ax.set_xlabel(keys[i])
+#                 ax.set_ylabel(keys[j])
+
+#                 if keys[i] in log_scale:
+#                     ax.set_xscale("log")
+#                 if keys[j] in log_scale:
+#                     ax.set_yscale("log")
+
+#                 ax.set_xlim(np.min(crt_values1), np.max(crt_values1))
+#                 ax.set_ylim(np.min(crt_values2), np.max(crt_values2))
+
+#     return fig, axs
 
 # %%
 def make_optimal_parameter_figure(
@@ -370,6 +499,8 @@ for key in results:
         vmin=0.0,
         vmax=1.0,
     )
+    fig.savefig(os.path.join(fig_path, f"biowta_{key_str}_hyperopt_ar.pdf"))
+    
     fig.suptitle(f"{key_str}: {key_str_human}")
 
 # %%
@@ -397,5 +528,11 @@ summary.sort_values(by=f"best_{chosen_fct}", ascending=False, inplace=True)
 
 # %%
 summary
+
+# %%
+np.mean(results[(1, 1, 0)]["fct"] >= 0.90)
+
+# %%
+np.mean(results[(1, 1, 0)]["fct_good"] >= 0.60)
 
 # %%
