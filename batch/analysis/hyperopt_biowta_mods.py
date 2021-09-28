@@ -207,119 +207,6 @@ def make_summary_figure(
 
 
 # %%
-# def make_summary_figure(
-#     values: dict,
-#     fct_key: str = "fct",
-#     top_fraction: float = 0.01,
-#     log_scale: Optional[Sequence] = None,
-#     vmin: float = 0.5,
-#     vmax: float = 1.0,
-# ) -> Tuple[plt.Figure, Sequence]:
-#     if log_scale is None:
-#         log_scale = []
-
-#     # keep only the keys that have some variation and are not scores
-#     keys = [
-#         key
-#         for key in values.keys()
-#         if not key.startswith("fct") and np.std(values[key]) > 0
-#     ]
-
-#     # identify the top 5% highest scores
-#     scores = values[fct_key]
-
-#     n = len(scores)
-#     n_highscore = max(1, int(np.round(top_fraction * n)))
-#     highscore_idxs = np.argsort(scores)[-n_highscore:]
-#     highscores = scores[highscore_idxs]
-
-#     # make the figure
-#     n_keys = len(keys)
-#     with FigureManager(n_keys, n_keys, squeeze=False) as (fig, axs):
-#         # draw histograms on the diagonal
-#         for i in range(n_keys):
-#             ax = axs[i, i]
-
-#             crt_values = values[keys[i]]
-#             sns.histplot(
-#                 crt_values,
-#                 element="step",
-#                 stat="density",
-#                 alpha=0.3,
-#                 color="C0",
-#                 log_scale=keys[i] in log_scale,
-#                 ax=ax,
-#             )
-
-#             # now draw the high-scoring values
-#             crt_highscore_values = crt_values[highscore_idxs]
-#             sns.kdeplot(
-#                 crt_highscore_values,
-#                 color="C1",
-#                 log_scale=keys[i] in log_scale,
-#                 shade=True,
-#                 label=f"highest {int(top_fraction * 100)}% of scores",
-#                 ax=ax,
-#             )
-#             sns.rugplot(
-#                 crt_highscore_values, height=0.05, c="C1", lw=0.5, ax=ax,
-#             )
-
-#             ax.legend(frameon=False)
-#             ax.set_xlabel(keys[i])
-
-#             ax.set_xlim(np.min(crt_values), np.max(crt_values))
-
-#         # now the off-diagonals
-#         for i in range(n_keys):
-#             crt_values1 = values[keys[i]]
-#             crt_highscore_values1 = crt_values1[highscore_idxs]
-#             for j in range(n_keys):
-#                 if j == i:
-#                     continue
-
-#                 crt_values2 = values[keys[j]]
-#                 crt_highscore_values2 = crt_values2[highscore_idxs]
-
-#                 ax = axs[i, j]
-
-#                 h = ax.scatter(
-#                     crt_values1,
-#                     crt_values2,
-#                     c=scores,
-#                     cmap="Greys",
-#                     vmin=vmin,
-#                     vmax=vmax,
-#                     alpha=0.2,
-#                     ec=None,
-#                 )
-
-#                 # now the high-scoring set
-#                 h = ax.scatter(
-#                     crt_highscore_values1,
-#                     crt_highscore_values2,
-#                     c=highscores,
-#                     cmap="Reds",
-#                     vmin=vmin,
-#                     # vmax=np.max(highscores),
-#                     alpha=0.7,
-#                     ec=None,
-#                 )
-
-#                 ax.set_xlabel(keys[i])
-#                 ax.set_ylabel(keys[j])
-
-#                 if keys[i] in log_scale:
-#                     ax.set_xscale("log")
-#                 if keys[j] in log_scale:
-#                     ax.set_yscale("log")
-
-#                 ax.set_xlim(np.min(crt_values1), np.max(crt_values1))
-#                 ax.set_ylim(np.min(crt_values2), np.max(crt_values2))
-
-#     return fig, axs
-
-# %%
 def make_optimal_parameter_figure(
     values: dict,
     fct_key: Union[str, Sequence] = "fct",
@@ -530,9 +417,25 @@ summary.sort_values(by=f"best_{chosen_fct}", ascending=False, inplace=True)
 summary
 
 # %%
-np.mean(results[(1, 1, 0)]["fct"] >= 0.90)
+mask = results[(1, 1, 0)]["fct"] >= 0.90
+np.mean(mask)
 
 # %%
-np.mean(results[(1, 1, 0)]["fct_good"] >= 0.60)
+results[(1, 1, 0)].keys()
+
+# %%
+(np.min(results[(1, 1, 0)]["rate"][mask]), np.max(results[(1, 1, 0)]["rate"][mask]))
+
+# %%
+np.quantile(results[(1, 1, 0)]["rate"][mask], [0.025, 0.975])
+
+# %%
+(
+    np.min(results[(1, 1, 0)]["temperature"][mask]),
+    np.max(results[(1, 1, 0)]["temperature"][mask]),
+)
+
+# %%
+np.quantile(results[(1, 1, 0)]["temperature"][mask], [0.025, 0.975])
 
 # %%
