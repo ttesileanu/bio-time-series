@@ -34,4 +34,4 @@ If you get any errors, make sure you activated the environment that you used to 
 
 ## Issues?
 
-If you encounter any issues with the package, plese file a report at https://github.com/ttesileanu/bio-time-series/issues.
+If you encounter any issues with the package, please file a report at https://github.com/ttesileanu/bio-time-series/issues.
